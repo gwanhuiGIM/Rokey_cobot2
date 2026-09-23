@@ -1,0 +1,45 @@
+# ── colcon 산출물 ────────────────────────────────────────
+build/
+install/
+install_container/
+build_container/
+log/
+
+# ── 파이썬 ───────────────────────────────────────────────
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+
+# OPENAI_API_KEY 
+.env
+*.env
+!.env.example
+
+# ── 외부 저장소 
+isaac_ros-dev/
+src/cobot_rg2/doosan-robot2/
+src/cobot_rg2/onrobot-ros2/
+
+# ── 실행 중 생기는 것 
+src/graspgenx_perception/data/graspgenx_scene/
+runs/
+output/
+*.log
+*.bag
+rosbag*/
+
+# ── 편집기 ───────────────────────────────────────────────
+.vscode/
+.idea/
+.obsidian/
+*.swp
+
+# ── 포트폴리오 추출 산출물 (임의 작성, 제출물 아님) ─────────
+PORTFOLIO_MAP.md
+PORTFOLIO_SOURCE.md
+PORTFOLIO_EXTRACTION_GUIDE.md
+SKILL_INVENTORY.md
+CLAUDE.md
