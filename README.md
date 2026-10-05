@@ -1,9 +1,9 @@
 # M0609 VLA Picking System
 
-> 두산로보틱스 ROKEY 부트캠프 협동-2 프로젝트(5인 팀)의 제출 스냅샷입니다. 이 저장소에서 개인이 바꾼 것은 README 정리뿐입니다.
+> 두산로보틱스 ROKEY 부트캠프 협동-2 프로젝트(5인 팀) 제출 스냅샷입니다. 코드는 제출본 그대로이고, 공개용으로 README만 다시 정리했습니다.
 
 자연어로 지시하면 Doosan M0609 + OnRobot RG2가 고정 카메라로 물체를 인식하고, 집어서 지정한 곳에 놓습니다.
-목표는 사람이 "무엇을 · 몇 개를 · 어디로"만 말하면 되게 하는 것이었고, 로봇이 어떻게 움직이고 언제 멈출지는 LLM에 맡기지 않는 것이었습니다.
+사람은 "무엇을 · 몇 개를 · 어디로"만 말하고, 로봇이 어떻게 움직이고 언제 멈출지는 LLM이 아니라 FSM이 정하도록 나눴습니다.
 
 > **핵심 설계**: 판단(LLM)과 실행·안전(FSM)을 서로 다른 노드·패키지로 나누고, 둘 사이는 `/vla/pick_command` JSON 채널로만 잇습니다. 모션 취소, 그리퍼 개폐, 물체 보유 상태, 충돌 씬 관리는 코드상 FSM(`task_manager`) 쪽에만 있습니다. 그래서 LLM 응답이 늦거나 틀려도 정지·그리퍼 판단은 FSM 규칙을 따르도록 분리했습니다.
 
@@ -25,16 +25,28 @@
                    robot_safety_node (별도 프로세스, /safety/*)
 ```
 
+## 핵심 기능
+
+| 기능 | 어디서 | 어떻게 |
+| --- | --- | --- |
+| 자연어 지시 해석 | `vla_system/agent_node` · `agent/skill_tier.py` | 단순 명령은 규칙(Tier 1)으로 바로, 맥락이 필요한 명령은 `gpt-5-mini` + 카메라 사진(Tier 2)으로 해석 |
+| 다중 물체 미션 | `vla_system/agent/mission.py` | "다 담아줘"를 하나씩 순차 처리하고, 중간에 지시를 바꿀 수 있음 |
+| 파지 자세 계산 | `graspgenx_perception/grasp_bridge_node` | YOLO-seg로 대상을 찾고, GraspGen 후보를 점수·도달 반경·접근축으로 걸러 선택 |
+| pick 사이클 실행 | `pick_fsm/task_manager` · `states.py` | 25개 상태로 인식 → 계획 → 집기 → 놓기를 조율, move_group(OMPL)으로 계획·실행 |
+| LLM 없는 정지 경로 | `vla_gui` → `vla_pick_bridge_node`, `robot_safety_node` | "멈춰"는 STT·LLM을 건너뛰어 FSM을 `PAUSED`로, Doosan 안전 서비스는 별도 프로세스에서 제공 |
+
 ## 무엇을 할 수 있나
 
 | 지시 | 시스템이 하는 일 |
 | --- | --- |
 | "사과 바구니에 담아줘" | 인식 → 파지 계획 → (승인 게이트, 기본 꺼짐) → 집기 → 바구니에 놓기 |
-| "이거 집어줘" (손가락으로 가리키며) | 카메라 사진에서 가리킨 물체를 골라 픽셀 좌표로 넘깁니다(`vla_command.launch.py`의 `pixel_policy` 기본값 `select`. 노드 단독 실행 시 기본값은 `warn`이라 픽셀을 무시합니다) |
+| "이거 집어줘" (손가락으로 가리키며) | 카메라 사진에서 가리킨 물체를 골라 픽셀 좌표로 넘깁니다¹ |
 | "사과 집어줘" (목적지 없이) | 들어 올린 뒤 `WAIT_PLACE_TARGET`에서 물체를 든 채 기다립니다. "테이블에 놔"(set_place) 또는 "그냥 거기 놔"(release_now)로 끝납니다 |
 | "보이는 과일 다 담아줘" | 미션 supervisor가 하나씩 순차로 처리합니다. 중간에 지시를 바꿀 수 있습니다 |
 | "멈춰" | GUI가 LLM·STT 대기 없이 pause 명령을 bridge로 보내고, FSM이 `PAUSED`로 갑니다. "계속해"로 이어 갑니다 |
 | "컵은 앞으로 담지 마" | 규칙으로 기억해 이후 "다 담아줘"에서 컵을 뺍니다 |
+
+¹ `vla_command.launch.py`로 띄울 때(`pixel_policy` 기본값 `select`) 동작입니다. 노드를 단독 실행하면 기본값이 `warn`이라 픽셀을 무시합니다.
 
 | 음성 명령 처리 | 경로 계획 화면 |
 | --- | --- |
@@ -79,7 +91,7 @@ flowchart TD
     ABORT --> SAFE_STOP -->|/pick/reset| HOME
 ```
 
-- `pick_fsm.launch.py`의 `require_approval` 기본값은 `false`(2026-08-11 결정)라 `WAIT_APPROVAL`은 곧바로 통과합니다. 켜려면 `require_approval:=true`.
+- `pick_fsm.launch.py`의 `require_approval` 기본값은 `false`라 `WAIT_APPROVAL`은 곧바로 통과합니다. 켜려면 `require_approval:=true`.
 - 진행 중인 상태 대부분(IDLE·SPEAK_FAIL·ABORT·SAFE_STOP 제외)에서 `PAUSED`로 갈 수 있고, `PAUSED`는 사람 명령(resume·release_now·home·stow·abort)으로만 빠져나옵니다. 거의 모든 상태에서 `ABORT`로 갈 수 있습니다.
 - `SAFE_STOP`과 `RELEASE_RETRY`는 곧장 재인식하지 않고 `HOME`을 거칩니다. 팔이 작업 공간에 남은 채 다시 촬영하면 그리퍼가 물체로 잡히기 때문입니다.
 - 물체를 들고 있을 수 있는 상태(`HOLDING_STATES`)에서는 ABORT가 나도 그리퍼를 열지 않습니다.
@@ -209,7 +221,7 @@ docker run -d --name od_kimkh \
 | --- | --- | --- |
 | 호스트에 `pip install opencv-python` | `apt install python3-opencv` | rclpy와 Qt가 한 프로세스에 뜨면 segfault. 컨테이너는 GUI를 띄우지 않아 pip `opencv-python==4.11.0.86`을 씁니다 |
 | `numpy>=2.0` | `numpy<2` | Humble `cv_bridge` 확장이 numpy 1 ABI라 `AttributeError: _ARRAY_API not found` |
-| `pip install --user` | venv | `~/.local`이 apt pytest를 덮어 전 패키지 테스트가 깨졌습니다 |
+| `pip install --user` | venv | `~/.local`이 `sys.path`에서 apt 패키지보다 앞이라 apt pytest를 덮어 테스트가 깨집니다 |
 
 ## 실행
 
@@ -263,20 +275,24 @@ source .venv/bin/activate
 python3 -m pytest src/vla_system/test -q                              # 246 passed (제출 당시 README 기록)
 ```
 
-- 위 숫자는 제출본(2026-09-23 커밋) README에 있던 기록이며, README 정리 때 다시 돌리지 않았습니다. ⚠️ 미검증
+- 위 숫자는 제출 당시 기록이며, 다시 실행하지 않았습니다.
 - 테스트는 로봇·카메라·API 키 없이 돕니다. 규칙 계층은 표 기반 가짜 파서로, 경계 JSON은 순수 함수로 검사하므로 실패하면 LLM 응답이 아니라 로직 쪽 문제입니다.
 - 실기 성능 검증은 하지 않았습니다.
 
 ## 한계 · 미완성
 
-- **동적 장애물 회피는 미연결입니다.** `src/cumotion`의 `dynamic_avoid`·`reactive_replan`은 pick_fsm에 연결하지 않았습니다(보류). 현재 경로의 대응은 move_group `replan`뿐입니다.
+- **실기 안전**: `pick_fsm.launch.py`는 항상 실기를 움직이고 승인 게이트도 기본 꺼짐입니다. 끌 때는 `/pick/stow` 후 `IDLE`을 확인합니다([종료 절차](#종료-절차)).
+- **연결되지 않은 기능**: 동적 장애물 회피(`src/cumotion`의 `dynamic_avoid`·`reactive_replan`)는 pick_fsm에 연결하지 않았고, 현재 대응은 move_group `replan`뿐입니다. `REGRASP`(eye-in-hand 재파지)는 스캐폴드이고, 기본 `grasp_source:=legacy_trigger`는 그리퍼 폭을 상수로 씁니다.
+- **저장소에 없는 자산**: `isaac_ros_cumotion`·GraspGenX·드라이버 소스와 `.venv`는 저장소에 없습니다. `fetch_externals.sh`가 받는 공개 upstream은 개발 당시 쓴 사본과 다를 수 있습니다.
+- **그대로 안 도는 문서**: `docs/RUNBOOK.md`는 개발 PC의 경로·개인 alias를 담고 있습니다.
+
+<details>
+<summary>세부 사항</summary>
+
 - `src/cumotion/README.md` 기준 미해결: 그리퍼 SRDF 자기충돌 쌍 누락으로 계획이 조용히 버려질 수 있음, 컨테이너 컨트롤러 스포너의 호스트 서비스 호출 문제.
-- `REGRASP`(eye-in-hand 재파지)는 스캐폴드입니다.
-- 기본값 `grasp_source:=legacy_trigger`는 그리퍼 폭을 상수로 씁니다. 물체별 폭은 `compute_grasp` 경로로만 옵니다.
 - 링크 문서끼리 기본값 서술이 어긋난 곳이 있습니다(`require_approval`, `pixel_policy`, `table`/`discard` 관절값). 어긋나면 코드(launch 파일)가 기준입니다.
-- `isaac_ros_cumotion`·GraspGenX·드라이버 소스는 저장소에 없습니다. `fetch_externals.sh`가 받는 공개 upstream은 개발 당시 쓴 사본과 다를 수 있습니다(스크립트 주석).
-- `docs/RUNBOOK.md`는 개발 PC의 경로·개인 alias를 담고 있어 그대로 실행되지 않습니다.
-- 판단 계층은 `.venv`(torch·openai 등 393줄 requirements)에 의존합니다.
+
+</details>
 
 ## License
 
