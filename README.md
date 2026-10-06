@@ -63,6 +63,11 @@
 
 **인식** — 고정형(eye-to-hand) RealSense D435i 1대와 YOLO-seg로 대상을 찾고, eye-to-hand 캘리브레이션(AX = XB) 결과로 카메라 좌표를 로봇 base 좌표로 바꿉니다. `graspgenx_perception`의 `grasp_bridge_node`가 컨테이너 안의 GraspGen에서 파지 후보 64개(`num_grasps`, 8GB VRAM 기준)를 받아 점수·도달 반경·접근축 조건으로 거르고 고릅니다. FSM의 기본 호출은 `grasp_source:=legacy_trigger`(`std_srvs/Trigger`)라 그리퍼 폭은 상수(`default_width_m`)로 채웁니다. 물체별 폭까지 받으려면 `ComputeGrasp` 경로(`grasp_source:=compute_grasp`)를 씁니다.
 
+| 파지 후보 선택 | 실물 RG2 파지 |
+| --- | --- |
+| ![포인트클라우드 위 GraspGen 파지 후보](docs/images/grasp_candidates.jpg) | ![M0609 + RG2가 오렌지를 집는 장면](docs/images/rg2_grasp.jpg) |
+| GraspGen 후보를 점수·도달 반경·접근축 조건으로 거른 결과 | M0609 + OnRobot RG2가 작업대 위 물체를 집는 장면 |
+
 **판단** — `src/vla_system`. `agent_node`는 단순 명령을 규칙(Tier 1)으로, 맥락이 필요한 명령을 `gpt-5-mini` + 카메라 사진(Tier 2, `config/system.yaml`)으로 처리합니다. `vla_pick_bridge_node`만 결정을 `/vla/pick_command` JSON으로 바꿔 내보내고, 팔을 직접 움직이지 않습니다. 이 bridge는 launch 기본값이 꺼짐(`enable_pick_bridge:=false`)이라 GUI에서 켜야 FSM 쪽으로 명령이 갑니다.
 
 **경계** — `voice_processing/vla_command_node`가 JSON을 `/pick/*` 서비스 호출로 바꿉니다. 타겟 지시는 FSM이 `LISTENING` 상태에서 `/get_keyword`를 부를 때 이 노드가 응답하는 방식(pull)으로 전달됩니다.
