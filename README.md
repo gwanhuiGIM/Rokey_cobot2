@@ -5,7 +5,7 @@
 자연어로 지시하면 Doosan M0609 + OnRobot RG2가 고정 카메라로 물체를 인식하고, 집어서 지정한 곳에 놓습니다.
 사람은 "무엇을 · 몇 개를 · 어디로"만 말하고, 로봇이 어떻게 움직이고 언제 멈출지는 LLM이 아니라 FSM이 정하도록 나눴습니다.
 
-> **핵심 설계**: 판단(LLM)과 실행·안전(FSM)을 서로 다른 노드·패키지로 나누고, 둘 사이는 `/vla/pick_command` JSON 채널로만 잇습니다. 모션 취소, 그리퍼 개폐, 물체 보유 상태, 충돌 씬 관리는 코드상 FSM(`task_manager`) 쪽에만 있습니다. 그래서 LLM 응답이 늦거나 틀려도 정지·그리퍼 판단은 FSM 규칙을 따르도록 분리했습니다.
+> **핵심 설계**: 판단(LLM)과 실행·안전(FSM)을 서로 다른 노드·패키지로 나누고, 둘 사이는 JSON 채널로만 주고받습니다(명령 `/vla/pick_command`, 결과 `/vla/pick_result`, 상태 `/vla/pick_status`). 모션 취소, 그리퍼 개폐, 물체 보유 상태, 충돌 씬 관리는 코드상 FSM(`task_manager`) 쪽에만 있습니다. 그래서 LLM 응답이 늦거나 틀려도 정지·그리퍼 판단은 FSM 규칙을 따르도록 분리했습니다.
 
 ```
 사람 ──▶ vla_gui ──▶ agent_node                      판단 계층 (src/vla_system)
@@ -33,7 +33,7 @@
 | 다중 물체 미션 | `vla_system/agent/mission.py` | "다 담아줘"를 하나씩 순차 처리하고, 중간에 지시를 바꿀 수 있음 |
 | 파지 자세 계산 | `graspgenx_perception/grasp_bridge_node` | YOLO-seg로 대상을 찾고, GraspGen 후보를 점수·도달 반경·접근축으로 걸러 선택 |
 | pick 사이클 실행 | `pick_fsm/task_manager` · `states.py` | 25개 상태로 인식 → 계획 → 집기 → 놓기를 조율, move_group(OMPL)으로 계획·실행 |
-| LLM 없는 정지 경로 | `vla_gui` → `vla_pick_bridge_node`, `robot_safety_node` | "멈춰"는 STT·LLM을 건너뛰어 FSM을 `PAUSED`로, Doosan 안전 서비스는 별도 프로세스에서 제공 |
+| LLM 없는 정지 경로 | `vla_gui` → `vla_pick_bridge_node`, `robot_safety_node` | 정지 버튼은 STT·LLM 대기 없이, 음성 "멈춰"는 STT 뒤 LLM을 건너뛰어 FSM을 `PAUSED`로, Doosan 안전 서비스는 별도 프로세스에서 제공 |
 
 ## 무엇을 할 수 있나
 
@@ -43,7 +43,7 @@
 | "이거 집어줘" (손가락으로 가리키며) | 카메라 사진에서 가리킨 물체를 골라 픽셀 좌표로 넘깁니다¹ |
 | "사과 집어줘" (목적지 없이) | 들어 올린 뒤 `WAIT_PLACE_TARGET`에서 물체를 든 채 기다립니다. "테이블에 놔"(set_place) 또는 "그냥 거기 놔"(release_now)로 끝납니다 |
 | "보이는 과일 다 담아줘" | 미션 supervisor가 하나씩 순차로 처리합니다. 중간에 지시를 바꿀 수 있습니다 |
-| "멈춰" | GUI가 LLM·STT 대기 없이 pause 명령을 bridge로 보내고, FSM이 `PAUSED`로 갑니다. "계속해"로 이어 갑니다 |
+| "멈춰" | GUI가 LLM을 거치지 않고 pause 명령을 bridge로 보내고(정지 버튼은 STT 대기도 없음, 음성은 STT로 글자가 된 뒤 정지 패턴으로 판별), FSM이 `PAUSED`로 갑니다. "계속해"로 이어 갑니다 |
 | "컵은 앞으로 담지 마" | 규칙으로 기억해 이후 "다 담아줘"에서 컵을 뺍니다 |
 
 ¹ `vla_command.launch.py`로 띄울 때(`pixel_policy` 기본값 `select`) 동작입니다. 노드를 단독 실행하면 기본값이 `warn`이라 픽셀을 무시합니다.
@@ -135,8 +135,8 @@ flowchart TD
 | --- | --- |
 | I1 | 계층 경계는 JSON 채널만 씁니다. `vla_interfaces` 메시지는 FSM 쪽으로 넘어가지 않습니다. |
 | I2 | VLM은 `/pick/approve`를 부르지 않습니다. 판단 계층에 그 코드 경로를 두지 않았습니다. |
-| I4 | 정지 경로에 LLM이 끼지 않습니다. "멈춰"는 GUI에서 STT·LLM 대기 없이 bridge로 바로 나갑니다. |
-| I5 | 물체를 든 상태에서 그리퍼를 자동으로 열지 않습니다. 떨어뜨리는 쪽이 멈추는 쪽보다 위험하기 때문입니다. |
+| I4 | 정지 경로에 LLM이 끼지 않습니다. GUI 정지 버튼은 STT·LLM 대기 없이, 음성 "멈춰"는 STT 뒤 LLM 없이 bridge로 바로 나갑니다(`vla_gui.py` `handle_user_text`·`pause_robot`). |
+| I5 | 물체를 든 채 중단·일시정지하면 그리퍼를 자동으로 열지 않습니다(정상 배치 단계의 `RELEASE`는 예외). 떨어뜨리는 쪽이 멈추는 쪽보다 위험하기 때문입니다. |
 | I6 | 동시에 진행하는 action은 1개로 제한합니다. 팔이 하나입니다. |
 | I7 | 상태 전이는 `states.py` 한 곳에서만 관리합니다. |
 | I11 | `PAUSED`에서는 자율 동작이 없습니다. 시간이 지나도 스스로 재개·배치하지 않습니다. |
