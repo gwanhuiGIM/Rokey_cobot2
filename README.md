@@ -2,7 +2,7 @@
 
 > 두산로보틱스 ROKEY 부트캠프 협동-2 프로젝트(5인 팀) 제출 스냅샷입니다. 코드는 제출본 그대로이고, 공개용으로 README만 다시 정리했습니다.
 
-> ▶️ **[1분 시연 영상](https://youtu.be/bOec0yE8m94)** — 이 프로젝트를 가장 빨리 파악할 수 있는 자료입니다. 참고 문서는 [더 읽을 문서](#더-읽을-문서), 본인 담당은 [프로젝트 요약](#contribution)에 있습니다.
+> ▶️ **[1분 시연 영상](https://youtu.be/bOec0yE8m94)** · 📄 **[발표 자료(PDF)](https://github.com/gwanhuiGIM/Rokey_cobot2/releases/download/presentation/cobot2_presentation.pdf)** — 이 프로젝트를 가장 빨리 파악할 수 있는 자료입니다. 참고 문서는 [더 읽을 문서](#더-읽을-문서), 본인 담당은 [프로젝트 요약](#contribution)에 있습니다.
 
 자연어로 지시하면 Doosan M0609 + OnRobot RG2가 고정 카메라로 물체를 인식하고, 집어서 지정한 곳에 놓습니다.
 사람은 "무엇을 · 몇 개를 · 어디로"만 말하고, 로봇이 어떻게 움직이고 언제 멈출지는 LLM이 아니라 FSM이 정하도록 나눴습니다.
