@@ -76,7 +76,17 @@
 
 ### FSM 상태 흐름
 
-상태와 허용 전이는 `src/pick_fsm/pick_fsm/states.py`의 `State`(25개)와 `TRANSITIONS` 한 곳에만 있습니다. 아래는 정상 경로와 주요 분기만 그린 것입니다.
+상태와 허용 전이는 `src/pick_fsm/pick_fsm/states.py`의 `State`와 `TRANSITIONS` 한 곳에만 있습니다. 상태는 기능별로 다섯 묶음입니다.
+
+| 묶음 | 하는 일 | 상태 |
+|---|---|---|
+| 인식 | 음성으로 타겟을 받고 파지 후보를 요청 | `LISTENING` → `PERCEIVE` |
+| 계획 | 대상을 충돌 씬에 등록하고 접근·파지·들기 3점 IK를 풂, 실패하면 다음 후보 | `SCENE_PREP` → `PLAN` ↔ `NEXT_CANDIDATE`, `WAIT_APPROVAL`(사람 승인, 기본 꺼짐) |
+| 파지 | 그리퍼를 닫은 채 접근 → 열고 하강 → 닫고 파지 확인, 놓치면 다시 | `STOW` → `APPROACH` → `OPEN_GRIPPER` → `DESCEND` → `CLOSE` → `VERIFY`, `RELEASE_RETRY` (`REGRASP`는 스캐폴드) |
+| 운반·놓기 | 들어 올려 목적지로 옮기고 놓은 뒤 홈 복귀 | `LIFT` → (`WAIT_PLACE_TARGET`) → `PLACE` ↔ `PLACE_RETRY` → `RELEASE` → `HOME` |
+| 사람 개입·안전 | 일시정지·중단·정지 유지·실패 통보 | `PAUSED`, `ABORT` → `SAFE_STOP`, `SPEAK_FAIL` (대기: `IDLE`) |
+
+아래는 정상 경로와 주요 분기만 그린 것입니다.
 
 ```mermaid
 flowchart TD
@@ -338,7 +348,7 @@ Doosan M0609 + RG2 그리퍼 + RealSense D435i + NVIDIA RTX 4060 Laptop(8GB) · 
 - **인지 실패 감지:** 장애물 인식이 멈춰도 경로 계획은 "장애물 없는 세상" 기준으로 성공하는 문제 → 원인 후보 3개(서비스 미기동·설정 오류·반영 지연)로 나누고 로봇을 움직이지 않고 계획만 실행해 재현 → 인식 서비스가 없으면 이동을 거부하는 게이트 + 반영된 장애물 수 기록, 설정 오류는 사전 점검 모드로 검출(팀 모션 코드 위에 제안·구현)
 - **안전 계층:** deterministic pick FSM이 모션 취소·그리퍼 개폐·물체 보유·충돌 씬을 전담, 판단 계층과는 JSON 3채널로만 연결
 - **기록:** 설계·실측 제약·실험 로그를 문서로 관리
-- **코드 근거:** [24개 동작 상태 pick FSM — `states.py`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/src/pick_fsm/pick_fsm/states.py#L20-L44) · [구동 중 정지 후 재계획 — `moveit_bridge.py`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/src/pick_fsm/pick_fsm/moveit_bridge.py#L218-L224) · [이동 전 ESDF 게이트 — `arm.py`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/src/cumotion/cumotion/arm.py#L361-L372) · [실측 제약 문서 — `constraints.md`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/docs/fsm/context/constraints.md)
+- **코드 근거:** [pick FSM 상태 정의(인식·계획·파지·운반·안전) — `states.py`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/src/pick_fsm/pick_fsm/states.py#L20-L44) · [구동 중 정지 후 재계획 — `moveit_bridge.py`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/src/pick_fsm/pick_fsm/moveit_bridge.py#L218-L224) · [이동 전 ESDF 게이트 — `dynamic_avoid.py`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/src/cumotion/cumotion/dynamic_avoid.py#L149-L158) · [실측 제약 문서 — `constraints.md`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/docs/fsm/context/constraints.md)
 
 </details>
 
