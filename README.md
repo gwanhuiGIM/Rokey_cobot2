@@ -2,6 +2,8 @@
 
 > 두산로보틱스 ROKEY 부트캠프 협동-2 프로젝트(5인 팀) 제출 스냅샷입니다. 코드는 제출본 그대로이고, 공개용으로 README만 다시 정리했습니다.
 
+> ▶️ **[1분 시연 영상](https://youtu.be/bOec0yE8m94)** — 이 프로젝트를 가장 빨리 파악할 수 있는 자료입니다. 참고 문서는 [더 읽을 문서](#더-읽을-문서), 본인 담당은 [프로젝트 요약](#contribution)에 있습니다.
+
 자연어로 지시하면 Doosan M0609 + OnRobot RG2가 고정 카메라로 물체를 인식하고, 집어서 지정한 곳에 놓습니다.
 사람은 "무엇을 · 몇 개를 · 어디로"만 말하고, 로봇이 어떻게 움직이고 언제 멈출지는 LLM이 아니라 FSM이 정하도록 나눴습니다.
 
@@ -25,7 +27,52 @@
                    robot_safety_node (별도 프로세스, /safety/*)
 ```
 
-## 핵심 기능
+<a id="contribution"></a>
+## 프로젝트 요약 · 본인 담당 (김관희)
+
+> 포트폴리오용 프로젝트 요약입니다. 이 저장소의 코드는 팀 최종 제출본이고, 제 역할 범위는 **본인 담당** 행에 적었습니다. 접힌 '프로젝트 기술 전체'는 팀 전체 시스템 설명입니다. 다른 프로젝트: [github.com/gwanhuiGIM](https://github.com/gwanhuiGIM)
+
+**마트 계산대에서 사람과 협업해, 물체마다 그리퍼 파지 자세를 스스로 찾아 집어 옮기는 빈 피킹(Pick & Place) 협동로봇 시스템을 만들고자 하였습니다.**<br>
+이 과정에서 GPU 한 대(8GB) 제약 속에서 인식·계획 모델의 메모리를 조정하고, 그리퍼 URDF 모델과 설치된 RG2의 차이를 실측해 적용하고, 팀원과 분업으로 개발한 VLA와 FSM의 제어 권한을 하나로 모았습니다.
+
+Doosan M0609 + RG2 그리퍼 + RealSense D435i + NVIDIA RTX 4060 Laptop(8GB) · 5인 팀 · ROKEY 4차 (26.07.30~26.08.12)
+**본인 담당:** 판단 계층(VLA)·안전 계층(FSM) 통합, GraspGenX↔실물 RG2 정합(실측·보정·규약), GPU 메모리 대응(파지 후보 수 조정·YOLO 노드 누적 정리), 구동 중 정지 후 재계획 연결, 인지 실패 감지 게이트(팀 모션 코드 위에 제안·구현)
+
+- **개요:** "사과 바구니에 담아줘" 같은 자연어 지시를 LLM이 해석하고, 협동로봇이 물체의 위치와 형상을 인식해 장애물을 우회하여 집어 옮기는 시스템
+- **위치:** ERP42 → 부트캠프 ROS2 프로젝트 3개를 거쳐, 판단·인식·모션·안전을 하나로 통합한 마지막 프로젝트
+- **문제 ① GPU 메모리 부족:** 장애물 지도(nvblox)·GPU 경로계획(cuMotion)·물체 분할(YOLO-seg)·파지 후보 생성(GraspGenX)이 노트북 GPU 한 대를 나눠 씀 — 상주분만 cuMotion 1.5GB + robot_segmenter(깊이 영상에서 로봇 팔 제거) 0.7GB + nvblox 0.3GB
+  - → GraspGenX 파지 후보 수를 기본 200 → 64로 줄여 8GB 제약에서 출발.
+  - → 재실행마다 YOLO 노드가 컨테이너에 쌓여(10개, VRAM 2.6GB·swap 소진) 마스크가 뒤섞임 → 실행 래퍼 + 중복 실행 방지 락으로 10개 → 1개 정리(래퍼 상태에서 Ctrl-C 종료 전달은 미검증)
+  - → 파지 실패 재현 중 이미 떠 있는 GraspGenX 워커와 중복 로드되어 CUDA OOM이 나는 것도 확인(원인 특정까지)
+  - → YOLO는 상주 120MB·추론 6.7ms로 병목이 아님을 실측, 진짜 병목은 GraspGenX였음을 검증
+- **문제 ② GraspGenX를 실물 RG2에 맞추기:** GraspGenX는 이상적인 RG2 모델로 파지 자세를 만드는데, 부트캠프에서 제공된 실물은 브라켓 22mm가 끼어 손끝 위치가 모델과 38mm 어긋나고(같은 기준면 비교), 힌지 구조라 벌릴수록 손끝이 짧아짐
+  - → GraspGenX 모델은 그대로 두고 우리 쪽(URDF·그리퍼 코드)에서 흡수: 실측 오프셋 반영, 개구폭별 손끝 길이 보정표(충돌 모델 배치·RViz 표시용 추정이며 IK 목표 자체는 바꾸지 않음)
+  - → grasp 자세를 손목 끝(`tool0`) 기준으로 잘못 해석해 실기에서 그리퍼가 90° 눕는 문제 → 두 로봇 모델(URDF)을 회전행렬로 비교해 기준을 그리퍼 몸체(`rg2_base_link`)로 확정
+  - → 닫힘 폭에 여유를 더해 물체에 닿기 전 멈추던 부호 오류(물체 폭 − 여유로 수정), 드라이버 폭 단위(1/10mm), 기본 파지력 40N이 사과를 으깨는 문제를 규약으로 정리
+- **문제 ③ VLA 노드와 기존 FSM 통합:** 따로 개발된 VLA 시스템이 자체 로봇 제어를 갖고 있어, 합치면 VLA와 pick FSM(단계별 상태를 나눠 중단 지점부터 재개하는 상태머신)이 동시에 팔에 명령할 수 있는 구조
+  - → 팀과 협의해 VLA의 로봇 제어부(약 3,800줄)를 걷어 내고, VLA는 "어떤 물체를 어디로"만 넘기며 좌표·파지 계산과 이동은 FSM이 전담
+  - → 카메라도 2대 → 1대 공유로 정리. 대가로 손목 카메라 근접 재파지 기능을 잃어, 나중에 복원할 수 있게 빈 서비스 인터페이스(`AcquireTarget.srv`)만 남김
+- **결과·한계:** YOLO 노드 누적 10 → 1 실사용 확인, VLA가 지정한 물체를 실카메라 6~9개 물체 장면에서 GraspGenX 파지 후보까지 연결 확인. 재계획은 OMPL 경로의 구동 중 정지→재계획과 출발 전 장애물 우회를 실기 확인. GPU 전 모듈 동시 구동 여유·RG2 보정의 파지 성공률 효과·cuMotion 실행 중 회피·전체 pick-to-place 실물 검증은 남은 과제
+- **회고:** "동작 성공"과 "안전한 동작"은 다른 층에서 따로 검증해야 한다
+
+<details>
+<summary><b>프로젝트 기술 전체 · 코드 근거</b></summary>
+
+- **판단 계층(VLM):** 규칙으로 처리 가능한 지시는 LLM 없이(Tier 1), 나머지는 GPT-5-mini + 카메라 사진 대화(Tier 2)로 무엇을·몇 개를·어디로 옮길지 결정. 손가락 가리키기 선택, 다중 물체 순차 처리, "컵은 담지 마" 같은 규칙 기억, "멈춰" 즉시 정지
+- **인식·파지:** 거치형 RealSense(eye-to-hand 캘리브레이션) + YOLO 물체 인식 → GraspGenX 파지 후보 생성
+- **모션플래닝:** MoveIt `move_group` 실행 중 재계획(OMPL 경로, 정지 후 새 경로), nvblox ESDF(장애물 표면까지의 거리를 담은 3D 거리장) 기반 cuMotion(cuRobo) GPU 계획, cuMotion 경로는 실행 중 장애물을 밀고 가는 것을 실기 확인("계획 시점에만 장애물을 읽는다"는 가설) → RMPflow 제안 검토(설치된 cuRobo에는 없어 MPC의 ROS 래핑 가능성을 별도 검토). 실기 중 cuMotion 경로 교체 문제를 발견해 팀원의 3Hz 재계획 루프로 임의 테스트(설계·실험 단계에서 종료)
+- **인지 실패 감지:** 장애물 인식이 멈춰도 경로 계획은 "장애물 없는 세상" 기준으로 성공하는 문제 → 원인 후보 3개(서비스 미기동·설정 오류·반영 지연)로 나누고 로봇을 움직이지 않고 계획만 실행해 재현 → 인식 서비스가 없으면 이동을 거부하는 게이트 + 반영된 장애물 수 기록, 설정 오류는 사전 점검 모드로 검출(팀 모션 코드 위에 제안·구현)
+- **안전 계층:** deterministic pick FSM이 모션 취소·그리퍼 개폐·물체 보유·충돌 씬을 전담, 판단 계층과는 JSON 3채널로만 연결
+- **기록:** 설계·실측 제약·실험 로그를 문서로 관리
+- **코드 근거:** [pick FSM 상태 정의(인식·계획·파지·운반·안전) — `states.py`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/src/pick_fsm/pick_fsm/states.py#L20-L44) · [구동 중 정지 후 재계획 — `moveit_bridge.py`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/src/pick_fsm/pick_fsm/moveit_bridge.py#L218-L224) · [이동 전 ESDF 게이트 — `dynamic_avoid.py`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/src/cumotion/cumotion/dynamic_avoid.py#L149-L158) · [실측 제약 문서 — `constraints.md`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/docs/fsm/context/constraints.md)
+
+</details>
+
+개인 개발본: [Personal_cobot2_ws](https://github.com/gwanhuiGIM/Personal_cobot2_ws)
+
+## 무엇을 할 수 있나
+
+**핵심 기능**
 
 | 기능 | 어디서 | 어떻게 |
 | --- | --- | --- |
@@ -34,8 +81,6 @@
 | 파지 자세 계산 | `graspgenx_perception/grasp_bridge_node` | YOLO-seg로 대상을 찾고, GraspGen 후보를 점수·도달 반경·접근축으로 걸러 선택 |
 | pick 사이클 실행 | `pick_fsm/task_manager` · `states.py` | 25개 상태로 인식 → 계획 → 집기 → 놓기를 조율, move_group(OMPL)으로 계획·실행 |
 | LLM 없는 정지 경로 | `vla_gui` → `vla_pick_bridge_node`, `robot_safety_node` | 정지 버튼은 STT·LLM 대기 없이, 음성 "멈춰"는 STT 뒤 LLM을 건너뛰어 FSM을 `PAUSED`로, Doosan 안전 서비스는 별도 프로세스에서 제공 |
-
-## 무엇을 할 수 있나
 
 | 지시 | 시스템이 하는 일 |
 | --- | --- |
@@ -61,18 +106,23 @@
 
 ![ROS 2 노드 아키텍처](docs/images/system_architecture.png)
 
-**인식** — 고정형(eye-to-hand) RealSense D435i 1대와 YOLO-seg로 대상을 찾고, eye-to-hand 캘리브레이션(AX = XB) 결과로 카메라 좌표를 로봇 base 좌표로 바꿉니다. `graspgenx_perception`의 `grasp_bridge_node`가 컨테이너 안의 GraspGen에서 파지 후보 64개(`num_grasps`, 8GB VRAM 기준)를 받아 점수·도달 반경·접근축 조건으로 거르고 고릅니다. FSM의 기본 호출은 `grasp_source:=legacy_trigger`(`std_srvs/Trigger`)라 그리퍼 폭은 상수(`default_width_m`)로 채웁니다. 물체별 폭까지 받으려면 `ComputeGrasp` 경로(`grasp_source:=compute_grasp`)를 씁니다.
-
 | 파지 후보 선택 | 실물 RG2 파지 |
 | --- | --- |
 | ![포인트클라우드 위 GraspGen 파지 후보](docs/images/grasp_candidates.jpg) | ![M0609 + RG2가 오렌지를 집는 장면](docs/images/rg2_grasp.jpg) |
 | GraspGen 후보를 점수·도달 반경·접근축 조건으로 거른 결과 | M0609 + OnRobot RG2가 작업대 위 물체를 집는 장면 |
+
+<details>
+<summary>계층별 설명 (인식 · 판단 · 경계 · 실행·안전)</summary>
+
+**인식** — 고정형(eye-to-hand) RealSense D435i 1대와 YOLO-seg로 대상을 찾고, eye-to-hand 캘리브레이션(AX = XB) 결과로 카메라 좌표를 로봇 base 좌표로 바꿉니다. `graspgenx_perception`의 `grasp_bridge_node`가 컨테이너 안의 GraspGen에서 파지 후보 64개(`num_grasps`, 8GB VRAM 기준)를 받아 점수·도달 반경·접근축 조건으로 거르고 고릅니다. FSM의 기본 호출은 `grasp_source:=legacy_trigger`(`std_srvs/Trigger`)라 그리퍼 폭은 상수(`default_width_m`)로 채웁니다. 물체별 폭까지 받으려면 `ComputeGrasp` 경로(`grasp_source:=compute_grasp`)를 씁니다.
 
 **판단** — `src/vla_system`. `agent_node`는 단순 명령을 규칙(Tier 1)으로, 맥락이 필요한 명령을 `gpt-5-mini` + 카메라 사진(Tier 2, `config/system.yaml`)으로 처리합니다. `vla_pick_bridge_node`만 결정을 `/vla/pick_command` JSON으로 바꿔 내보내고, 팔을 직접 움직이지 않습니다. 이 bridge는 launch 기본값이 꺼짐(`enable_pick_bridge:=false`)이라 GUI에서 켜야 FSM 쪽으로 명령이 갑니다.
 
 **경계** — `voice_processing/vla_command_node`가 JSON을 `/pick/*` 서비스 호출로 바꿉니다. 타겟 지시는 FSM이 `LISTENING` 상태에서 `/get_keyword`를 부를 때 이 노드가 응답하는 방식(pull)으로 전달됩니다.
 
 **실행·안전** — `pick_fsm/task_manager`가 25개 상태로 인식 → 계획 → 실행 사이클을 조율하고, `moveit_bridge`가 move_group에 계획·실행을 맡깁니다. `robot_safety_node`는 `task_manager`와 별도 프로세스로 Doosan 안전 서비스(`/safety/stop` = MoveStop, backdrive 진입/해제)를 감쌉니다. FSM이 멈춰도 이 노드의 서비스는 따로 호출할 수 있게 나눴지만, 서비스는 결과를 기다리지 않고 바로 응답(fire-and-forget)하므로 실제 결과는 `/pick/robot_state_text`로 확인합니다.
+
+</details>
 
 ### FSM 상태 흐름
 
@@ -85,6 +135,9 @@
 | 파지 | 그리퍼를 닫은 채 접근 → 열고 하강 → 닫고 파지 확인, 놓치면 다시 | `STOW` → `APPROACH` → `OPEN_GRIPPER` → `DESCEND` → `CLOSE` → `VERIFY`, `RELEASE_RETRY` (`REGRASP`는 스캐폴드) |
 | 운반·놓기 | 들어 올려 목적지로 옮기고 놓은 뒤 홈 복귀 | `LIFT` → (`WAIT_PLACE_TARGET`) → `PLACE` ↔ `PLACE_RETRY` → `RELEASE` → `HOME` |
 | 사람 개입·안전 | 일시정지·중단·정지 유지·실패 통보 | `PAUSED`, `ABORT` → `SAFE_STOP`, `SPEAK_FAIL` (대기: `IDLE`) |
+
+<details>
+<summary>상태 흐름도 · 전이 규칙</summary>
 
 아래는 정상 경로와 주요 분기만 그린 것입니다.
 
@@ -112,6 +165,8 @@ flowchart TD
 - 물체를 들고 있을 수 있는 상태(`HOLDING_STATES`)에서는 ABORT가 나도 그리퍼를 열지 않습니다.
 - 실행 중 씬이 바뀌었을 때의 대응은 별도 상태가 아니라 move_group의 `replan` 파라미터(`replan_attempts` 3회)이고, 그래도 실패하면 FSM이 바깥에서 재시도하거나 다음 후보로 넘어갑니다.
 
+</details>
+
 운용 중에는 rqt FSM 패널로 상태 확인, 타겟 지정, 속도 조절, 비상정지, 안전 모드 진입을 합니다.
 
 ![FSM 제어 패널 (rqt)](docs/images/fsm_control_panel.png)
@@ -131,6 +186,9 @@ flowchart TD
 
 번호는 코드 주석·테스트에서 쓰는 팀 내부 번호입니다(예: `vla_gui.py`의 I4, `mission.py`의 I6, `test_pick_fsm.py`의 I12). 빠진 번호는 이 저장소에 정의가 남아 있지 않습니다.
 
+<details>
+<summary>불변식 I1–I13 표</summary>
+
 | 번호 | 규칙 |
 | --- | --- |
 | I1 | 계층 경계는 JSON 채널만 씁니다. `vla_interfaces` 메시지는 FSM 쪽으로 넘어가지 않습니다. |
@@ -143,7 +201,38 @@ flowchart TD
 | I12 | 기본 설정(`wait_place_timeout_sec=0.0`)에서는 놓을 위치를 기다리는 동안 시간 경과만으로 자동 배치하지 않습니다. |
 | I13 | 그리퍼는 팔이 멈춘 상태에서만 엽니다. |
 
+</details>
+
+## 한계 · 미완성
+
+- **실기 안전**: `pick_fsm.launch.py`는 항상 실기를 움직이고 승인 게이트도 기본 꺼짐입니다. 끌 때는 `/pick/stow` 후 `IDLE`을 확인합니다([종료 절차](#종료-절차)).
+- **연결되지 않은 기능**: 동적 장애물 회피(`src/cumotion`의 `dynamic_avoid`·`reactive_replan`)는 pick_fsm에 연결하지 않았고, 현재 대응은 move_group `replan`뿐입니다. `REGRASP`(eye-in-hand 재파지)는 스캐폴드이고, 기본 `grasp_source:=legacy_trigger`는 그리퍼 폭을 상수로 씁니다.
+- **저장소에 없는 자산**: `isaac_ros_cumotion`·GraspGenX·드라이버 소스와 `.venv`는 저장소에 없습니다. `fetch_externals.sh`가 받는 공개 upstream은 개발 당시 쓴 사본과 다를 수 있습니다.
+- **그대로 안 도는 문서**: `docs/RUNBOOK.md`는 개발 PC의 경로·개인 alias를 담고 있습니다.
+
+<details>
+<summary>세부 사항</summary>
+
+- `src/cumotion/README.md` 기준 미해결: 그리퍼 SRDF 자기충돌 쌍 누락으로 계획이 조용히 버려질 수 있음, 컨테이너 컨트롤러 스포너의 호스트 서비스 호출 문제.
+- 링크 문서끼리 기본값 서술이 어긋난 곳이 있습니다(`require_approval`, `pixel_policy`, `table`/`discard` 관절값). 어긋나면 코드(launch 파일)가 기준입니다.
+
+</details>
+
+## 더 읽을 문서
+
+| 문서 | 내용 | 지위 |
+| --- | --- | --- |
+| [docs/RUNBOOK.md](docs/RUNBOOK.md) | 터미널 배치와 실행 순서 | 정본(개발 PC 경로 기준) |
+| [docs/fsm/vla-bridge-contract.md](docs/fsm/vla-bridge-contract.md) | 두 계층을 잇는 JSON 스키마 | 정본 |
+| [docs/fsm/context/constraints.md](docs/fsm/context/constraints.md) | 실기 운용 중 알아낸 사실(설계 문서와 다른 점) | 정본 |
+| [src/PACKAGES.md](src/PACKAGES.md) | 패키지별 상세 · FSM 상태도 | 정본 |
+| [docs/fsm/README.md](docs/fsm/README.md) | 로봇 쪽 문서 지도 | 참고 |
+| `src/<pkg>/README.md` | pick_fsm · voice_processing · graspgenx_perception · cobot_rg2 · cumotion 패키지 문서 | 패키지 정본 |
+
 ## 환경 · 장비
+
+<details>
+<summary>요구 환경 · 장비 구성</summary>
 
 - Ubuntu 22.04, ROS 2 Humble, Python 3.10
 - NVIDIA GPU + CUDA 필수 — GraspGenX와 cuMotion은 CPU로 돌지 않습니다(개발 PC: RTX 4060 Laptop)
@@ -158,7 +247,12 @@ flowchart TD
 
 카메라 위치나 마운트를 바꾸면 eye-to-hand 캘리브레이션을 다시 해야 합니다.
 
+</details>
+
 ## 저장소 구성
+
+<details>
+<summary>디렉터리 구조 · 저장소에 없는 것</summary>
 
 ```
 .
@@ -196,7 +290,12 @@ flowchart TD
 | `data/graspgenx_scene/` | 2.3G (제출 당시 참고값) | 실행 중 생기는 출력물이며 입력 데이터가 아닙니다 |
 | `.env` | — | 🔴 API 키 파일. `.env.example`을 보고 직접 만듭니다 |
 
+</details>
+
 ## 설치
+
+<details>
+<summary>설치 절차 (외부 저장소 · API 키 · 컨테이너 · 빌드)</summary>
 
 ```bash
 git clone <이 저장소> ~/m0609_vla_ws && cd ~/m0609_vla_ws
@@ -238,7 +337,14 @@ docker run -d --name od_kimkh \
 | `numpy>=2.0` | `numpy<2` | Humble `cv_bridge` 확장이 numpy 1 ABI라 `AttributeError: _ARRAY_API not found` |
 | `pip install --user` | venv | `~/.local`이 `sys.path`에서 apt 패키지보다 앞이라 apt pytest를 덮어 테스트가 깨집니다 |
 
+</details>
+
 ## 실행
+
+🔴 **`pick_fsm.launch.py`는 항상 실기를 움직입니다.** `dry_run` 인자는 제거됐고, 선언되지 않은 인자(`dry_run:=true` 포함)는 경고 없이 무시됩니다. 승인 게이트도 기본 꺼짐이라, 실기에서 남는 안전장치는 물리 비상정지 버튼입니다. 처음 돌릴 때는 `require_approval:=true`를 권합니다.
+
+<details>
+<summary>실행 순서(터미널 배치) · 자주 쓰는 서비스</summary>
 
 터미널 배치와 전체 순서는 [docs/RUNBOOK.md](docs/RUNBOOK.md)에 있습니다. 요약하면 다음과 같습니다.
 
@@ -252,8 +358,6 @@ docker run -d --name od_kimkh \
            ros2 launch voice_processing vla_command.launch.py auto_start:=true
 판단       source scripts/vla/env.sh && ros2 run vla_system vla_gui   # GUI에서 pick bridge를 켭니다
 ```
-
-🔴 **`pick_fsm.launch.py`는 항상 실기를 움직입니다.** `dry_run` 인자는 제거됐고, 선언되지 않은 인자(`dry_run:=true` 포함)는 경고 없이 무시됩니다. 승인 게이트도 기본 꺼짐이라, 실기에서 남는 안전장치는 물리 비상정지 버튼입니다. 처음 돌릴 때는 `require_approval:=true`를 권합니다.
 
 RUNBOOK의 예시 명령은 `planning_pipeline:=isaac_ros_cumotion`, 개발 PC 경로(`~/cobot2_ws_new`, `~/M0609_VLA_system_new`), `colcon build` 직접 실행(§1)을 그대로 담고 있습니다. 이 저장소에서는 루트 기준 경로와 `./scripts/build.sh`로 바꿔 읽어야 합니다.
 
@@ -271,6 +375,8 @@ ros2 service call /pick/reset       std_srvs/srv/Trigger {}   # SAFE_STOP 복구
 ros2 topic echo /pick/state                                   # 현재 FSM 상태
 ```
 
+</details>
+
 ### 종료 절차
 
 🔴 **끄기 전에 `/pick/stow`를 부르고, `/pick/state`가 `IDLE`이 될 때까지 기다린 뒤 노드를 내립니다.** 서비스 응답은 요청을 받았다는 뜻일 뿐 정리가 끝났다는 뜻이 아닙니다.
@@ -281,6 +387,9 @@ ros2 topic echo /pick/state                                   # 현재 FSM 상�
 순서가 "그리퍼 열고 홈 복귀"와 반대인 것은 의도입니다. 그대로 하면 지금 위치에서 물체를 떨어뜨립니다. 물체를 든 채 `Ctrl-C`로 끄면 그리퍼는 물체를 문 채 남습니다(떨어뜨리는 것보다 안전한 쪽을 택했습니다).
 
 ## 검증
+
+<details>
+<summary>테스트 명령 · 결과 기록</summary>
 
 ```bash
 source /opt/ros/humble/setup.bash && source install/setup.bash
@@ -294,77 +403,8 @@ python3 -m pytest src/vla_system/test -q                              # 246 pass
 - 테스트는 로봇·카메라·API 키 없이 돕니다. 규칙 계층은 표 기반 가짜 파서로, 경계 JSON은 순수 함수로 검사하므로 실패하면 LLM 응답이 아니라 로직 쪽 문제입니다.
 - 실기 성능 검증은 하지 않았습니다.
 
-## 한계 · 미완성
-
-- **실기 안전**: `pick_fsm.launch.py`는 항상 실기를 움직이고 승인 게이트도 기본 꺼짐입니다. 끌 때는 `/pick/stow` 후 `IDLE`을 확인합니다([종료 절차](#종료-절차)).
-- **연결되지 않은 기능**: 동적 장애물 회피(`src/cumotion`의 `dynamic_avoid`·`reactive_replan`)는 pick_fsm에 연결하지 않았고, 현재 대응은 move_group `replan`뿐입니다. `REGRASP`(eye-in-hand 재파지)는 스캐폴드이고, 기본 `grasp_source:=legacy_trigger`는 그리퍼 폭을 상수로 씁니다.
-- **저장소에 없는 자산**: `isaac_ros_cumotion`·GraspGenX·드라이버 소스와 `.venv`는 저장소에 없습니다. `fetch_externals.sh`가 받는 공개 upstream은 개발 당시 쓴 사본과 다를 수 있습니다.
-- **그대로 안 도는 문서**: `docs/RUNBOOK.md`는 개발 PC의 경로·개인 alias를 담고 있습니다.
-
-<details>
-<summary>세부 사항</summary>
-
-- `src/cumotion/README.md` 기준 미해결: 그리퍼 SRDF 자기충돌 쌍 누락으로 계획이 조용히 버려질 수 있음, 컨테이너 컨트롤러 스포너의 호스트 서비스 호출 문제.
-- 링크 문서끼리 기본값 서술이 어긋난 곳이 있습니다(`require_approval`, `pixel_policy`, `table`/`discard` 관절값). 어긋나면 코드(launch 파일)가 기준입니다.
-
 </details>
-
-<a id="contribution"></a>
-## 프로젝트 요약 · 본인 담당 (김관희)
-
-> 포트폴리오용 프로젝트 요약입니다. 이 저장소의 코드는 팀 최종 제출본이고, 제 역할 범위는 **본인 담당** 행에 적었습니다. 접힌 '프로젝트 기술 전체'는 팀 전체 시스템 설명입니다. 다른 프로젝트: [github.com/gwanhuiGIM](https://github.com/gwanhuiGIM)
-
-**마트 계산대에서 사람과 협업해, 물체마다 그리퍼 파지 자세를 스스로 찾아 집어 옮기는 빈 피킹(Pick & Place) 협동로봇 시스템을 만들고자 하였습니다.**<br>
-이 과정에서 GPU 한 대(8GB) 제약 속에서 인식·계획 모델의 메모리를 조정하고, 그리퍼 URDF 모델과 설치된 RG2의 차이를 실측해 적용하고, 팀원과 분업으로 개발한 VLA와 FSM의 제어 권한을 하나로 모았습니다.
-
-▶️ [1분 시연 영상](https://youtu.be/bOec0yE8m94)
-
-Doosan M0609 + RG2 그리퍼 + RealSense D435i + NVIDIA RTX 4060 Laptop(8GB) · 5인 팀 · ROKEY 4차 (26.07.30~26.08.12)
-**본인 담당:** 판단 계층(VLA)·안전 계층(FSM) 통합, GraspGenX↔실물 RG2 정합(실측·보정·규약), GPU 메모리 대응(파지 후보 수 조정·YOLO 노드 누적 정리), 구동 중 정지 후 재계획 연결, 인지 실패 감지 게이트(팀 모션 코드 위에 제안·구현)
-
-- **개요:** "사과 바구니에 담아줘" 같은 자연어 지시를 LLM이 해석하고, 협동로봇이 물체의 위치와 형상을 인식해 장애물을 우회하여 집어 옮기는 시스템
-- **위치:** ERP42 → 부트캠프 ROS2 프로젝트 3개를 거쳐, 판단·인식·모션·안전을 하나로 통합한 마지막 프로젝트
-- **문제 ① GPU 메모리 부족:** 장애물 지도(nvblox)·GPU 경로계획(cuMotion)·물체 분할(YOLO-seg)·파지 후보 생성(GraspGenX)이 노트북 GPU 한 대를 나눠 씀 — 상주분만 cuMotion 1.5GB + robot_segmenter(깊이 영상에서 로봇 팔 제거) 0.7GB + nvblox 0.3GB
-  - → GraspGenX 파지 후보 수를 기본 200 → 64로 줄여 8GB 제약에서 출발.
-  - → 재실행마다 YOLO 노드가 컨테이너에 쌓여(10개, VRAM 2.6GB·swap 소진) 마스크가 뒤섞임 → 실행 래퍼 + 중복 실행 방지 락으로 10개 → 1개 정리(래퍼 상태에서 Ctrl-C 종료 전달은 미검증)
-  - → 파지 실패 재현 중 이미 떠 있는 GraspGenX 워커와 중복 로드되어 CUDA OOM이 나는 것도 확인(원인 특정까지)
-  - → YOLO는 상주 120MB·추론 6.7ms로 병목이 아님을 실측, 진짜 병목은 GraspGenX였음을 검증
-- **문제 ② GraspGenX를 실물 RG2에 맞추기:** GraspGenX는 이상적인 RG2 모델로 파지 자세를 만드는데, 부트캠프에서 제공된 실물은 브라켓 22mm가 끼어 손끝 위치가 모델과 38mm 어긋나고(같은 기준면 비교), 힌지 구조라 벌릴수록 손끝이 짧아짐
-  - → GraspGenX 모델은 그대로 두고 우리 쪽(URDF·그리퍼 코드)에서 흡수: 실측 오프셋 반영, 개구폭별 손끝 길이 보정표(충돌 모델 배치·RViz 표시용 추정이며 IK 목표 자체는 바꾸지 않음)
-  - → grasp 자세를 손목 끝(`tool0`) 기준으로 잘못 해석해 실기에서 그리퍼가 90° 눕는 문제 → 두 로봇 모델(URDF)을 회전행렬로 비교해 기준을 그리퍼 몸체(`rg2_base_link`)로 확정
-  - → 닫힘 폭에 여유를 더해 물체에 닿기 전 멈추던 부호 오류(물체 폭 − 여유로 수정), 드라이버 폭 단위(1/10mm), 기본 파지력 40N이 사과를 으깨는 문제를 규약으로 정리
-- **문제 ③ VLA 노드와 기존 FSM 통합:** 따로 개발된 VLA 시스템이 자체 로봇 제어를 갖고 있어, 합치면 VLA와 pick FSM(단계별 상태를 나눠 중단 지점부터 재개하는 상태머신)이 동시에 팔에 명령할 수 있는 구조
-  - → 팀과 협의해 VLA의 로봇 제어부(약 3,800줄)를 걷어 내고, VLA는 "어떤 물체를 어디로"만 넘기며 좌표·파지 계산과 이동은 FSM이 전담
-  - → 카메라도 2대 → 1대 공유로 정리. 대가로 손목 카메라 근접 재파지 기능을 잃어, 나중에 복원할 수 있게 빈 서비스 인터페이스(`AcquireTarget.srv`)만 남김
-- **결과·한계:** YOLO 노드 누적 10 → 1 실사용 확인, VLA가 지정한 물체를 실카메라 6~9개 물체 장면에서 GraspGenX 파지 후보까지 연결 확인. 재계획은 OMPL 경로의 구동 중 정지→재계획과 출발 전 장애물 우회를 실기 확인. GPU 전 모듈 동시 구동 여유·RG2 보정의 파지 성공률 효과·cuMotion 실행 중 회피·전체 pick-to-place 실물 검증은 남은 과제
-- **회고:** "동작 성공"과 "안전한 동작"은 다른 층에서 따로 검증해야 한다
-
-<details>
-<summary><b>프로젝트 기술 전체 · 코드 근거</b></summary>
-
-- **판단 계층(VLM):** 규칙으로 처리 가능한 지시는 LLM 없이(Tier 1), 나머지는 GPT-5-mini + 카메라 사진 대화(Tier 2)로 무엇을·몇 개를·어디로 옮길지 결정. 손가락 가리키기 선택, 다중 물체 순차 처리, "컵은 담지 마" 같은 규칙 기억, "멈춰" 즉시 정지
-- **인식·파지:** 거치형 RealSense(eye-to-hand 캘리브레이션) + YOLO 물체 인식 → GraspGenX 파지 후보 생성
-- **모션플래닝:** MoveIt `move_group` 실행 중 재계획(OMPL 경로, 정지 후 새 경로), nvblox ESDF(장애물 표면까지의 거리를 담은 3D 거리장) 기반 cuMotion(cuRobo) GPU 계획, cuMotion 경로는 실행 중 장애물을 밀고 가는 것을 실기 확인("계획 시점에만 장애물을 읽는다"는 가설) → RMPflow 제안 검토(설치된 cuRobo에는 없어 MPC의 ROS 래핑 가능성을 별도 검토). 실기 중 cuMotion 경로 교체 문제를 발견해 팀원의 3Hz 재계획 루프로 임의 테스트(설계·실험 단계에서 종료)
-- **인지 실패 감지:** 장애물 인식이 멈춰도 경로 계획은 "장애물 없는 세상" 기준으로 성공하는 문제 → 원인 후보 3개(서비스 미기동·설정 오류·반영 지연)로 나누고 로봇을 움직이지 않고 계획만 실행해 재현 → 인식 서비스가 없으면 이동을 거부하는 게이트 + 반영된 장애물 수 기록, 설정 오류는 사전 점검 모드로 검출(팀 모션 코드 위에 제안·구현)
-- **안전 계층:** deterministic pick FSM이 모션 취소·그리퍼 개폐·물체 보유·충돌 씬을 전담, 판단 계층과는 JSON 3채널로만 연결
-- **기록:** 설계·실측 제약·실험 로그를 문서로 관리
-- **코드 근거:** [pick FSM 상태 정의(인식·계획·파지·운반·안전) — `states.py`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/src/pick_fsm/pick_fsm/states.py#L20-L44) · [구동 중 정지 후 재계획 — `moveit_bridge.py`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/src/pick_fsm/pick_fsm/moveit_bridge.py#L218-L224) · [이동 전 ESDF 게이트 — `dynamic_avoid.py`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/src/cumotion/cumotion/dynamic_avoid.py#L149-L158) · [실측 제약 문서 — `constraints.md`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/docs/fsm/context/constraints.md)
-
-</details>
-
-개인 개발본: [Personal_cobot2_ws](https://github.com/gwanhuiGIM/Personal_cobot2_ws)
 
 ## License
 
 이 저장소에는 라이선스를 부여하지 않았습니다(All rights reserved). 저장소에 포함되거나 `fetch_externals.sh`로 받는 upstream 코드·모델(Doosan·OnRobot 드라이버, Isaac ROS, GraspGenX, YOLO 등)은 각 저장소의 LICENSE를 따릅니다.
-
-## 더 읽을 문서
-
-| 문서 | 내용 | 지위 |
-| --- | --- | --- |
-| [docs/RUNBOOK.md](docs/RUNBOOK.md) | 터미널 배치와 실행 순서 | 정본(개발 PC 경로 기준) |
-| [docs/fsm/vla-bridge-contract.md](docs/fsm/vla-bridge-contract.md) | 두 계층을 잇는 JSON 스키마 | 정본 |
-| [docs/fsm/context/constraints.md](docs/fsm/context/constraints.md) | 실기 운용 중 알아낸 사실(설계 문서와 다른 점) | 정본 |
-| [src/PACKAGES.md](src/PACKAGES.md) | 패키지별 상세 · FSM 상태도 | 정본 |
-| [docs/fsm/README.md](docs/fsm/README.md) | 로봇 쪽 문서 지도 | 참고 |
-| `src/<pkg>/README.md` | pick_fsm · voice_processing · graspgenx_perception · cobot_rg2 · cumotion 패키지 문서 | 패키지 정본 |
