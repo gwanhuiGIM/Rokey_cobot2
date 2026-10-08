@@ -2,7 +2,7 @@
 
 > 두산로보틱스 ROKEY 부트캠프 협동-2 프로젝트(5인 팀) 제출 스냅샷입니다. 코드는 제출본 그대로이고, 공개용으로 README만 다시 정리했습니다.
 
-> ▶️ **[1분 시연 영상](https://youtu.be/bOec0yE8m94)** — 이 프로젝트를 가장 빨리 파악할 수 있는 자료입니다. 참고 문서는 [더 읽을 문서](#더-읽을-문서), 본인 담당은 [프로젝트 요약](#contribution)에 있습니다.
+> ▶️ **[1분 시연 영상](https://youtu.be/bOec0yE8m94)** — 이 프로젝트를 가장 빨리 파악할 수 있는 자료입니다. 참고 문서는 [더 읽을 문서](#더-읽을-문서)에 있습니다.
 >
 > 📄 [발표 자료(PDF, 72쪽)](https://github.com/gwanhuiGIM/Rokey_cobot2/releases/download/presentation/cobot2_presentation.pdf) — 세부 기술 발표 자료
 
@@ -29,48 +29,68 @@
                    robot_safety_node (별도 프로세스, /safety/*)
 ```
 
-<a id="contribution"></a>
-## 프로젝트 요약 · 본인 담당 (김관희)
-
-> 포트폴리오용 프로젝트 요약입니다. 이 저장소의 코드는 팀 최종 제출본이고, 제 역할 범위는 **본인 담당** 행에 적었습니다. 접힌 '프로젝트 기술 전체'는 팀 전체 시스템 설명입니다. 다른 프로젝트: [github.com/gwanhuiGIM](https://github.com/gwanhuiGIM)
-
-**마트 계산대에서 사람과 협업해, 물체마다 그리퍼 파지 자세를 스스로 찾아 집어 옮기는 빈 피킹(Pick & Place) 협동로봇 시스템을 만들고자 하였습니다.**<br>
-이 과정에서 GPU 한 대(8GB) 제약 속에서 인식·계획 모델의 메모리를 조정하고, 그리퍼 URDF 모델과 설치된 RG2의 차이를 실측해 적용하고, 팀원과 분업으로 개발한 VLA와 FSM의 제어 권한을 하나로 모았습니다.
-
-Doosan M0609 + RG2 그리퍼 + RealSense D435i + NVIDIA RTX 4060 Laptop(8GB) · 5인 팀 · ROKEY 4차 (26.07.30~26.08.12)
-**본인 담당:** 판단 계층(VLA)·안전 계층(FSM) 통합, GraspGenX↔실물 RG2 정합(실측·보정·규약), GPU 메모리 대응(파지 후보 수 조정·YOLO 노드 누적 정리), 구동 중 정지 후 재계획 연결, 인지 실패 감지 게이트(팀 모션 코드 위에 제안·구현)
-
-- **개요:** "사과 바구니에 담아줘" 같은 자연어 지시를 LLM이 해석하고, 협동로봇이 물체의 위치와 형상을 인식해 장애물을 우회하여 집어 옮기는 시스템
-- **위치:** ERP42 → 부트캠프 ROS2 프로젝트 3개를 거쳐, 판단·인식·모션·안전을 하나로 통합한 마지막 프로젝트
-- **문제 ① GPU 메모리 부족:** 장애물 지도(nvblox)·GPU 경로계획(cuMotion)·물체 분할(YOLO-seg)·파지 후보 생성(GraspGenX)이 노트북 GPU 한 대를 나눠 씀 — 상주분만 cuMotion 1.5GB + robot_segmenter(깊이 영상에서 로봇 팔 제거) 0.7GB + nvblox 0.3GB
-  - → GraspGenX 파지 후보 수를 기본 200 → 64로 줄여 8GB 제약에서 출발.
-  - → 재실행마다 YOLO 노드가 컨테이너에 쌓여(10개, VRAM 2.6GB·swap 소진) 마스크가 뒤섞임 → 실행 래퍼 + 중복 실행 방지 락으로 10개 → 1개 정리(래퍼 상태에서 Ctrl-C 종료 전달은 미검증)
-  - → 파지 실패 재현 중 이미 떠 있는 GraspGenX 워커와 중복 로드되어 CUDA OOM이 나는 것도 확인(원인 특정까지)
-  - → YOLO는 상주 120MB·추론 6.7ms로 병목이 아님을 실측, 진짜 병목은 GraspGenX였음을 검증
-- **문제 ② GraspGenX를 실물 RG2에 맞추기:** GraspGenX는 이상적인 RG2 모델로 파지 자세를 만드는데, 부트캠프에서 제공된 실물은 브라켓 22mm가 끼어 손끝 위치가 모델과 38mm 어긋나고(같은 기준면 비교), 힌지 구조라 벌릴수록 손끝이 짧아짐
-  - → GraspGenX 모델은 그대로 두고 우리 쪽(URDF·그리퍼 코드)에서 흡수: 실측 오프셋 반영, 개구폭별 손끝 길이 보정표(충돌 모델 배치·RViz 표시용 추정이며 IK 목표 자체는 바꾸지 않음)
-  - → grasp 자세를 손목 끝(`tool0`) 기준으로 잘못 해석해 실기에서 그리퍼가 90° 눕는 문제 → 두 로봇 모델(URDF)을 회전행렬로 비교해 기준을 그리퍼 몸체(`rg2_base_link`)로 확정
-  - → 닫힘 폭에 여유를 더해 물체에 닿기 전 멈추던 부호 오류(물체 폭 − 여유로 수정), 드라이버 폭 단위(1/10mm), 기본 파지력 40N이 사과를 으깨는 문제를 규약으로 정리
-- **문제 ③ VLA 노드와 기존 FSM 통합:** 따로 개발된 VLA 시스템이 자체 로봇 제어를 갖고 있어, 합치면 VLA와 pick FSM(단계별 상태를 나눠 중단 지점부터 재개하는 상태머신)이 동시에 팔에 명령할 수 있는 구조
-  - → 팀과 협의해 VLA의 로봇 제어부(약 3,800줄)를 걷어 내고, VLA는 "어떤 물체를 어디로"만 넘기며 좌표·파지 계산과 이동은 FSM이 전담
-  - → 카메라도 2대 → 1대 공유로 정리. 대가로 손목 카메라 근접 재파지 기능을 잃어, 나중에 복원할 수 있게 빈 서비스 인터페이스(`AcquireTarget.srv`)만 남김
-- **결과·한계:** YOLO 노드 누적 10 → 1 실사용 확인, VLA가 지정한 물체를 실카메라 6~9개 물체 장면에서 GraspGenX 파지 후보까지 연결 확인. 재계획은 OMPL 경로의 구동 중 정지→재계획과 출발 전 장애물 우회를 실기 확인. GPU 전 모듈 동시 구동 여유·RG2 보정의 파지 성공률 효과·cuMotion 실행 중 회피·전체 pick-to-place 실물 검증은 남은 과제
-- **회고:** "동작 성공"과 "안전한 동작"은 다른 층에서 따로 검증해야 한다
+## 환경 · 장비
 
 <details>
-<summary><b>프로젝트 기술 전체 · 코드 근거</b></summary>
+<summary>요구 환경 · 장비 구성</summary>
 
-- **판단 계층(VLM):** 규칙으로 처리 가능한 지시는 LLM 없이(Tier 1), 나머지는 GPT-5-mini + 카메라 사진 대화(Tier 2)로 무엇을·몇 개를·어디로 옮길지 결정. 손가락 가리키기 선택, 다중 물체 순차 처리, "컵은 담지 마" 같은 규칙 기억, "멈춰" 즉시 정지
-- **인식·파지:** 거치형 RealSense(eye-to-hand 캘리브레이션) + YOLO 물체 인식 → GraspGenX 파지 후보 생성
-- **모션플래닝:** MoveIt `move_group` 실행 중 재계획(OMPL 경로, 정지 후 새 경로), nvblox ESDF(장애물 표면까지의 거리를 담은 3D 거리장) 기반 cuMotion(cuRobo) GPU 계획, cuMotion 경로는 실행 중 장애물을 밀고 가는 것을 실기 확인("계획 시점에만 장애물을 읽는다"는 가설) → RMPflow 제안 검토(설치된 cuRobo에는 없어 MPC의 ROS 래핑 가능성을 별도 검토). 실기 중 cuMotion 경로 교체 문제를 발견해 팀원의 3Hz 재계획 루프로 임의 테스트(설계·실험 단계에서 종료)
-- **인지 실패 감지:** 장애물 인식이 멈춰도 경로 계획은 "장애물 없는 세상" 기준으로 성공하는 문제 → 원인 후보 3개(서비스 미기동·설정 오류·반영 지연)로 나누고 로봇을 움직이지 않고 계획만 실행해 재현 → 인식 서비스가 없으면 이동을 거부하는 게이트 + 반영된 장애물 수 기록, 설정 오류는 사전 점검 모드로 검출(팀 모션 코드 위에 제안·구현)
-- **안전 계층:** deterministic pick FSM이 모션 취소·그리퍼 개폐·물체 보유·충돌 씬을 전담, 판단 계층과는 JSON 3채널로만 연결
-- **기록:** 설계·실측 제약·실험 로그를 문서로 관리
-- **코드 근거:** [pick FSM 상태 정의(인식·계획·파지·운반·안전) — `states.py`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/src/pick_fsm/pick_fsm/states.py#L20-L44) · [구동 중 정지 후 재계획 — `moveit_bridge.py`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/src/pick_fsm/pick_fsm/moveit_bridge.py#L218-L224) · [이동 전 ESDF 게이트 — `dynamic_avoid.py`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/src/cumotion/cumotion/dynamic_avoid.py#L149-L158) · [실측 제약 문서 — `constraints.md`](https://github.com/gwanhuiGIM/Rokey_cobot2/blob/main/docs/fsm/context/constraints.md)
+- Ubuntu 22.04, ROS 2 Humble, Python 3.10
+- NVIDIA GPU + CUDA 필수 — GraspGenX와 cuMotion은 CPU로 돌지 않습니다(개발 PC: RTX 4060 Laptop)
+- Docker + `nvidia-container-toolkit`(`--gpus all` 지원)
+
+| 구성 요소 | 종류 | 설정 |
+| --- | --- | --- |
+| Robot | Doosan **M0609** | namespace `dsr01`, IP `192.168.1.100`(`m0609_rg2_bringup` launch) |
+| Gripper | OnRobot **RG2** | `src/cobot_rg2`의 xacro·bringup·MoveIt 설정 |
+| Vision | Intel RealSense **D435i** × 1 | 🔴 **고정형(eye-to-hand)** — 작업대 옆에 세워 둡니다. 로봇 팔에 달지 않습니다 |
+| PC | RTX 4060 Laptop | GraspGenX · cuMotion GPU 연산 |
+
+카메라 위치나 마운트를 바꾸면 eye-to-hand 캘리브레이션을 다시 해야 합니다.
 
 </details>
 
-개인 개발본: [Personal_cobot2_ws](https://github.com/gwanhuiGIM/Personal_cobot2_ws)
+## 저장소 구성
+
+<details>
+<summary>디렉터리 구조 · 저장소에 없는 것</summary>
+
+```
+.
+├── src/
+│   ├── pick_fsm/              실행·안전 계층 — task_manager(FSM) · moveit_bridge · robot_safety_node · rqt 패널
+│   ├── pick_fsm_msgs/         ComputeGrasp / AcquireTarget 인터페이스
+│   ├── voice_processing/      경계 수신부 vla_command_node (+ 구버전 마이크 노드)
+│   ├── graspgenx_perception/  YOLO-seg + GraspGen 파지 자세 계산
+│   ├── cobot_rg2/             M0609 + RG2 bringup · MoveIt 설정
+│   ├── cumotion/              동적 회피 실험 (pick_fsm 미연결)
+│   ├── object_detection/      YOLO 가중치 share 경로
+│   ├── vla_system/            판단 계층 — GUI · 에이전트 · 규칙 · bridge
+│   ├── vla_interfaces/        판단 계층 내부 메시지 (경계를 넘지 않음)
+│   └── PACKAGES.md            패키지별 상세 · FSM 상태도
+├── config/                    objects.yaml · cumotion · nvblox 설정
+├── docker/                    GraspGenX 컨테이너 (Dockerfile.graspx)
+├── docs/                      RUNBOOK · 경계 계약 · 실기 제약 · 이미지
+├── scripts/
+│   ├── build.sh               빌드 (fsm / vla 분리)
+│   ├── fetch_externals.sh     외부 저장소 받기
+│   ├── fsm/                   로봇 쪽 보조 스크립트
+│   └── vla/                   판단 쪽 보조 스크립트 (env.sh 등)
+├── requirements-vla.txt       판단 계층 파이썬 의존성 (393줄)
+└── .env.example               API 키 입력 양식
+```
+
+### 저장소에 없는 것
+
+| 항목 | 용량 | 받는 법 |
+| --- | --- | --- |
+| GraspGenX · isaac_ros(cuMotion · nvblox) · Doosan 드라이버 | 20GB+ (제출 당시 참고값) | `./scripts/fetch_externals.sh` |
+| `.venv/` | 6.6G (제출 당시 참고값) | `requirements-vla.txt`로 새로 만듭니다 |
+| 도커 이미지 | 7G (제출 당시 참고값) | `docker/Dockerfile.graspx`로 빌드합니다 |
+| `build/ install/ log/` | 1.7G (제출 당시 참고값) | 절대경로가 박혀 있어 옮겨 쓸 수 없습니다. 새로 빌드합니다 |
+| `data/graspgenx_scene/` | 2.3G (제출 당시 참고값) | 실행 중 생기는 출력물이며 입력 데이터가 아닙니다 |
+| `.env` | — | 🔴 API 키 파일. `.env.example`을 보고 직접 만듭니다 |
+
+</details>
 
 ## 무엇을 할 수 있나
 
@@ -230,69 +250,6 @@ flowchart TD
 | [src/PACKAGES.md](src/PACKAGES.md) | 패키지별 상세 · FSM 상태도 | 정본 |
 | [docs/fsm/README.md](docs/fsm/README.md) | 로봇 쪽 문서 지도 | 참고 |
 | `src/<pkg>/README.md` | pick_fsm · voice_processing · graspgenx_perception · cobot_rg2 · cumotion 패키지 문서 | 패키지 정본 |
-
-## 환경 · 장비
-
-<details>
-<summary>요구 환경 · 장비 구성</summary>
-
-- Ubuntu 22.04, ROS 2 Humble, Python 3.10
-- NVIDIA GPU + CUDA 필수 — GraspGenX와 cuMotion은 CPU로 돌지 않습니다(개발 PC: RTX 4060 Laptop)
-- Docker + `nvidia-container-toolkit`(`--gpus all` 지원)
-
-| 구성 요소 | 종류 | 설정 |
-| --- | --- | --- |
-| Robot | Doosan **M0609** | namespace `dsr01`, IP `192.168.1.100`(`m0609_rg2_bringup` launch) |
-| Gripper | OnRobot **RG2** | `src/cobot_rg2`의 xacro·bringup·MoveIt 설정 |
-| Vision | Intel RealSense **D435i** × 1 | 🔴 **고정형(eye-to-hand)** — 작업대 옆에 세워 둡니다. 로봇 팔에 달지 않습니다 |
-| PC | RTX 4060 Laptop | GraspGenX · cuMotion GPU 연산 |
-
-카메라 위치나 마운트를 바꾸면 eye-to-hand 캘리브레이션을 다시 해야 합니다.
-
-</details>
-
-## 저장소 구성
-
-<details>
-<summary>디렉터리 구조 · 저장소에 없는 것</summary>
-
-```
-.
-├── src/
-│   ├── pick_fsm/              실행·안전 계층 — task_manager(FSM) · moveit_bridge · robot_safety_node · rqt 패널
-│   ├── pick_fsm_msgs/         ComputeGrasp / AcquireTarget 인터페이스
-│   ├── voice_processing/      경계 수신부 vla_command_node (+ 구버전 마이크 노드)
-│   ├── graspgenx_perception/  YOLO-seg + GraspGen 파지 자세 계산
-│   ├── cobot_rg2/             M0609 + RG2 bringup · MoveIt 설정
-│   ├── cumotion/              동적 회피 실험 (pick_fsm 미연결)
-│   ├── object_detection/      YOLO 가중치 share 경로
-│   ├── vla_system/            판단 계층 — GUI · 에이전트 · 규칙 · bridge
-│   ├── vla_interfaces/        판단 계층 내부 메시지 (경계를 넘지 않음)
-│   └── PACKAGES.md            패키지별 상세 · FSM 상태도
-├── config/                    objects.yaml · cumotion · nvblox 설정
-├── docker/                    GraspGenX 컨테이너 (Dockerfile.graspx)
-├── docs/                      RUNBOOK · 경계 계약 · 실기 제약 · 이미지
-├── scripts/
-│   ├── build.sh               빌드 (fsm / vla 분리)
-│   ├── fetch_externals.sh     외부 저장소 받기
-│   ├── fsm/                   로봇 쪽 보조 스크립트
-│   └── vla/                   판단 쪽 보조 스크립트 (env.sh 등)
-├── requirements-vla.txt       판단 계층 파이썬 의존성 (393줄)
-└── .env.example               API 키 입력 양식
-```
-
-### 저장소에 없는 것
-
-| 항목 | 용량 | 받는 법 |
-| --- | --- | --- |
-| GraspGenX · isaac_ros(cuMotion · nvblox) · Doosan 드라이버 | 20GB+ (제출 당시 참고값) | `./scripts/fetch_externals.sh` |
-| `.venv/` | 6.6G (제출 당시 참고값) | `requirements-vla.txt`로 새로 만듭니다 |
-| 도커 이미지 | 7G (제출 당시 참고값) | `docker/Dockerfile.graspx`로 빌드합니다 |
-| `build/ install/ log/` | 1.7G (제출 당시 참고값) | 절대경로가 박혀 있어 옮겨 쓸 수 없습니다. 새로 빌드합니다 |
-| `data/graspgenx_scene/` | 2.3G (제출 당시 참고값) | 실행 중 생기는 출력물이며 입력 데이터가 아닙니다 |
-| `.env` | — | 🔴 API 키 파일. `.env.example`을 보고 직접 만듭니다 |
-
-</details>
 
 ## 설치
 
