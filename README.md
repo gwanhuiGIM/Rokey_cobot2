@@ -11,22 +11,20 @@
 
 > **핵심 설계**: 판단(LLM)과 실행·안전(FSM)을 서로 다른 노드·패키지로 나누고, 둘 사이는 JSON 채널로만 주고받습니다(명령 `/vla/pick_command`, 결과 `/vla/pick_result`, 상태 `/vla/pick_status`). 모션 취소, 그리퍼 개폐, 물체 보유 상태, 충돌 씬 관리는 코드상 FSM(`task_manager`) 쪽에만 있습니다. 그래서 LLM 응답이 늦거나 틀려도 정지·그리퍼 판단은 FSM 규칙을 따르도록 분리했습니다.
 
-```
-사람 ──▶ vla_gui ──▶ agent_node                      판단 계층 (src/vla_system)
-         │           ├ Tier 1 규칙 (LLM 없이)
-         │           └ Tier 2 gpt-5-mini + 카메라 사진
-         │                │ RobotAction
-         │                ▼
-         └─ "멈춰" ──▶ vla_pick_bridge_node    (멈춰는 LLM을 거치지 않고 bridge로 바로 간다)
-                          │ /vla/pick_command (JSON)
-        ══════════════════╪══════════════════   ← 계층 경계
-                          ▼
-                   vla_command_node ──▶ task_manager (pick_fsm)      실행·안전 계층
-                   (/pick/* 서비스,      │ grasp 요청
-                    /get_keyword 응답)   ├──▶ graspgenx_perception (YOLO-seg + GraspGen 컨테이너)
-                                         ▼
-                                  moveit_bridge ──▶ move_group (OMPL 기본) ──▶ M0609 + RG2
-                   robot_safety_node (별도 프로세스, /safety/*)
+```mermaid
+flowchart TB
+    subgraph JUDGE["판단 계층 (src/vla_system)"]
+        P["사람"] --> GUI["vla_gui"] --> AG["agent_node<br/>Tier 1 규칙 (LLM 없이)<br/>Tier 2 gpt-5-mini + 카메라 사진"]
+        AG -->|"RobotAction"| BR["vla_pick_bridge_node"]
+        GUI -->|"&quot;멈춰&quot; (LLM 거치지 않음)"| BR
+    end
+    BR ==>|"/vla/pick_command (JSON) — 계층 경계"| CMD
+    subgraph EXEC["실행·안전 계층"]
+        CMD["vla_command_node<br/>(/pick/* 서비스, /get_keyword 응답)"] --> TM["task_manager (pick_fsm)"]
+        TM -->|"grasp 요청"| GG["graspgenx_perception<br/>(YOLO-seg + GraspGen 컨테이너)"]
+        TM --> MB["moveit_bridge"] --> MG["move_group (OMPL 기본)"] --> ROBOT["M0609 + RG2"]
+        SAFE["robot_safety_node<br/>(별도 프로세스, /safety/*)"]
+    end
 ```
 
 ## 목차
