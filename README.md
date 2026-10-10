@@ -57,20 +57,30 @@ _주제별 바로가기입니다. 본문 배치 순서와 다를 수 있습니�
 
 ## 저장소 구성
 
+**핵심 코드 바로가기**
+
+| 파일 | 하는 일 | 설명 위치 |
+| --- | --- | --- |
+| ⭐ **[`pick_fsm/task_manager.py`](src/pick_fsm/pick_fsm/task_manager.py)** | 인식 → 계획 → 집기 → 놓기 사이클을 조율하는 FSM 노드 | [시스템 구조](#시스템-구조) |
+| **[`pick_fsm/states.py`](src/pick_fsm/pick_fsm/states.py)** | FSM 상태(`State`)와 허용 전이(`TRANSITIONS`) 정의 | [FSM 상태 흐름](#fsm-상태-흐름) |
+| **[`voice_processing/vla_command_node.py`](src/voice_processing/voice_processing/vla_command_node.py)** | 계층 경계: `/vla/pick_command` JSON을 `/pick/*` 서비스 호출로 변환 | [시스템 구조](#시스템-구조) |
+| **[`graspgenx_perception/grasp_bridge_node.py`](src/graspgenx_perception/graspgenx_perception/grasp_bridge_node.py)** | GraspGen 파지 후보를 받아 점수·도달 반경·접근축으로 걸러 선택 | [시스템 구조](#시스템-구조) |
+| **[`vla_system/agent/skill_tier.py`](src/vla_system/vla_system/agent/skill_tier.py)** | 자연어 지시를 규칙(Tier 1)과 LLM(Tier 2)으로 나눠 해석 | [무엇을 할 수 있나](#무엇을-할-수-있나) |
+
 <details>
 <summary>디렉터리 구조 · 저장소에 없는 것</summary>
 
 ```
 .
 ├── src/
-│   ├── pick_fsm/              실행·안전 계층 — task_manager(FSM) · moveit_bridge · robot_safety_node · rqt 패널
+│   ├── pick_fsm/              ★ 실행·안전 계층 — task_manager(FSM) · moveit_bridge · robot_safety_node · rqt 패널
 │   ├── pick_fsm_msgs/         ComputeGrasp / AcquireTarget 인터페이스
-│   ├── voice_processing/      경계 수신부 vla_command_node (+ 구버전 마이크 노드)
-│   ├── graspgenx_perception/  YOLO-seg + GraspGen 파지 자세 계산
+│   ├── voice_processing/      ★ 경계 수신부 vla_command_node (+ 구버전 마이크 노드)
+│   ├── graspgenx_perception/  ★ YOLO-seg + GraspGen 파지 자세 계산
 │   ├── cobot_rg2/             M0609 + RG2 bringup · MoveIt 설정
 │   ├── cumotion/              동적 회피 실험 (pick_fsm 미연결)
 │   ├── object_detection/      YOLO 가중치 share 경로
-│   ├── vla_system/            판단 계층 — GUI · 에이전트 · 규칙 · bridge
+│   ├── vla_system/            ★ 판단 계층 — GUI · 에이전트 · 규칙 · bridge
 │   ├── vla_interfaces/        판단 계층 내부 메시지 (경계를 넘지 않음)
 │   └── PACKAGES.md            패키지별 상세 · FSM 상태도
 ├── config/                    objects.yaml · cumotion · nvblox 설정
@@ -83,6 +93,7 @@ _주제별 바로가기입니다. 본문 배치 순서와 다를 수 있습니�
 │   └── vla/                   판단 쪽 보조 스크립트 (env.sh 등)
 ├── requirements-vla.txt       판단 계층 파이썬 의존성 (393줄)
 └── .env.example               API 키 입력 양식
+★ = 위 "핵심 코드 바로가기" 파일이 있는 곳
 ```
 
 ### 저장소에 없는 것
@@ -104,10 +115,10 @@ _주제별 바로가기입니다. 본문 배치 순서와 다를 수 있습니�
 
 | 기능 | 어디서 | 어떻게 |
 | --- | --- | --- |
-| 자연어 지시 해석 | `vla_system/agent_node` · `agent/skill_tier.py` | 단순 명령은 규칙(Tier 1)으로 바로, 맥락이 필요한 명령은 `gpt-5-mini` + 카메라 사진(Tier 2)으로 해석 |
-| 다중 물체 미션 | `vla_system/agent/mission.py` | "다 담아줘"를 하나씩 순차 처리하고, 중간에 지시를 바꿀 수 있음 |
+| 자연어 지시 해석 | `vla_system/agent_node` · [`agent/skill_tier.py`](src/vla_system/vla_system/agent/skill_tier.py) | 단순 명령은 규칙(Tier 1)으로 바로, 맥락이 필요한 명령은 `gpt-5-mini` + 카메라 사진(Tier 2)으로 해석 |
+| 다중 물체 미션 | [`vla_system/agent/mission.py`](src/vla_system/vla_system/agent/mission.py) | "다 담아줘"를 하나씩 순차 처리하고, 중간에 지시를 바꿀 수 있음 |
 | 파지 자세 계산 | `graspgenx_perception/grasp_bridge_node` | YOLO-seg로 대상을 찾고, GraspGen 후보를 점수·도달 반경·접근축으로 걸러 선택 |
-| pick 사이클 실행 | `pick_fsm/task_manager` · `states.py` | 25개 상태로 인식 → 계획 → 집기 → 놓기를 조율, move_group(OMPL)으로 계획·실행 |
+| pick 사이클 실행 | `pick_fsm/task_manager` · [`states.py`](src/pick_fsm/pick_fsm/states.py) | 25개 상태로 인식 → 계획 → 집기 → 놓기를 조율, move_group(OMPL)으로 계획·실행 |
 | LLM 없는 정지 경로 | `vla_gui` → `vla_pick_bridge_node`, `robot_safety_node` | 정지 버튼은 STT·LLM 대기 없이, 음성 "멈춰"는 STT 뒤 LLM을 건너뛰어 FSM을 `PAUSED`로, Doosan 안전 서비스는 별도 프로세스에서 제공 |
 
 | 지시 | 시스템이 하는 일 |
@@ -119,7 +130,7 @@ _주제별 바로가기입니다. 본문 배치 순서와 다를 수 있습니�
 | "멈춰" | GUI가 LLM을 거치지 않고 pause 명령을 bridge로 보내고(정지 버튼은 STT 대기도 없음, 음성은 STT로 글자가 된 뒤 정지 패턴으로 판별), FSM이 `PAUSED`로 갑니다. "계속해"로 이어 갑니다 |
 | "컵은 앞으로 담지 마" | 규칙으로 기억해 이후 "다 담아줘"에서 컵을 뺍니다 |
 
-¹ `vla_command.launch.py`로 띄울 때(`pixel_policy` 기본값 `select`) 동작입니다. 노드를 단독 실행하면 기본값이 `warn`이라 픽셀을 무시합니다.
+¹ [`vla_command.launch.py`](src/voice_processing/launch/vla_command.launch.py)로 띄울 때(`pixel_policy` 기본값 `select`) 동작입니다. 노드를 단독 실행하면 기본값이 `warn`이라 픽셀을 무시합니다.
 
 | 음성 명령 처리 | 경로 계획 화면 |
 | --- | --- |
@@ -187,7 +198,7 @@ flowchart TD
     ABORT --> SAFE_STOP -->|/pick/reset| HOME
 ```
 
-- `pick_fsm.launch.py`의 `require_approval` 기본값은 `false`라 `WAIT_APPROVAL`은 곧바로 통과합니다. 켜려면 `require_approval:=true`.
+- [`pick_fsm.launch.py`](src/pick_fsm/launch/pick_fsm.launch.py)의 `require_approval` 기본값은 `false`라 `WAIT_APPROVAL`은 곧바로 통과합니다. 켜려면 `require_approval:=true`.
 - 진행 중인 상태 대부분(IDLE·SPEAK_FAIL·ABORT·SAFE_STOP 제외)에서 `PAUSED`로 갈 수 있고, `PAUSED`는 사람 명령(resume·release_now·home·stow·abort)으로만 빠져나옵니다. 거의 모든 상태에서 `ABORT`로 갈 수 있습니다.
 - `SAFE_STOP`과 `RELEASE_RETRY`는 곧장 재인식하지 않고 `HOME`을 거칩니다. 팔이 작업 공간에 남은 채 다시 촬영하면 그리퍼가 물체로 잡히기 때문입니다.
 - 물체를 들고 있을 수 있는 상태(`HOLDING_STATES`)에서는 ABORT가 나도 그리퍼를 열지 않습니다.
@@ -212,7 +223,7 @@ flowchart TD
 
 ### 깨면 안 되는 규칙 (불변식)
 
-번호는 코드 주석·테스트에서 쓰는 팀 내부 번호입니다(예: `vla_gui.py`의 I4, `mission.py`의 I6, `test_pick_fsm.py`의 I12). 빠진 번호는 이 저장소에 정의가 남아 있지 않습니다.
+번호는 코드 주석·테스트에서 쓰는 팀 내부 번호입니다(예: [`vla_gui.py`](src/vla_system/vla_system/vla_gui.py)의 I4, `mission.py`의 I6, [`test_pick_fsm.py`](src/pick_fsm/test/test_pick_fsm.py)의 I12). 빠진 번호는 이 저장소에 정의가 남아 있지 않습니다.
 
 <details>
 <summary>불변식 I1–I13 표</summary>
@@ -235,7 +246,7 @@ flowchart TD
 
 - **실기 안전**: `pick_fsm.launch.py`는 항상 실기를 움직이고 승인 게이트도 기본 꺼짐입니다. 끌 때는 `/pick/stow` 후 `IDLE`을 확인합니다([종료 절차](#종료-절차)).
 - **연결되지 않은 기능**: 동적 장애물 회피(`src/cumotion`의 `dynamic_avoid`·`reactive_replan`)는 pick_fsm에 연결하지 않았고, 현재 대응은 move_group `replan`뿐입니다. `REGRASP`(eye-in-hand 재파지)는 스캐폴드이고, 기본 `grasp_source:=legacy_trigger`는 그리퍼 폭을 상수로 씁니다.
-- **저장소에 없는 자산**: `isaac_ros_cumotion`·GraspGenX·드라이버 소스와 `.venv`는 저장소에 없습니다. `fetch_externals.sh`가 받는 공개 upstream은 개발 당시 쓴 사본과 다를 수 있습니다.
+- **저장소에 없는 자산**: `isaac_ros_cumotion`·GraspGenX·드라이버 소스와 `.venv`는 저장소에 없습니다. [`fetch_externals.sh`](scripts/fetch_externals.sh)가 받는 공개 upstream은 개발 당시 쓴 사본과 다를 수 있습니다.
 - **그대로 안 도는 문서**: `docs/RUNBOOK.md`는 개발 PC의 경로·개인 alias를 담고 있습니다.
 
 <details>
@@ -292,7 +303,7 @@ docker run -d --name od_kimkh \
 
 ### 빌드할 때 지킬 것
 
-- **`colcon build`를 직접 돌리지 말고 `./scripts/build.sh`를 씁니다.** `vla_system`은 `.venv` 안의 torch·openai가 필요한데, apt의 `/usr/bin/colcon`은 venv를 켜도 `/usr/bin/python3`로 돌아 console_scripts 셰뱅에 그 경로가 박힙니다. 그러면 노드가 런타임에 `ModuleNotFoundError: torch`로 죽습니다. `build.sh`는 vla 쪽만 venv의 `python3 -m colcon`으로 빌드합니다. 확인: `head -1 install/vla_system/lib/vla_system/agent_node`가 `.venv`를 가리켜야 합니다.
+- **`colcon build`를 직접 돌리지 말고 [`./scripts/build.sh`](scripts/build.sh)를 씁니다.** `vla_system`은 `.venv` 안의 torch·openai가 필요한데, apt의 `/usr/bin/colcon`은 venv를 켜도 `/usr/bin/python3`로 돌아 console_scripts 셰뱅에 그 경로가 박힙니다. 그러면 노드가 런타임에 `ModuleNotFoundError: torch`로 죽습니다. `build.sh`는 vla 쪽만 venv의 `python3 -m colcon`으로 빌드합니다. 확인: `head -1 install/vla_system/lib/vla_system/agent_node`가 `.venv`를 가리켜야 합니다.
 - **`.yaml`만 고쳐도 다시 빌드합니다.** `ament_python` 패키지의 share 경로는 `build/`를 보므로 `src` 수정이 자동 반영되지 않습니다(`.py`는 바로 반영되어 헷갈리기 쉽습니다).
 - **`ROS_DOMAIN_ID=93`을 호스트와 컨테이너 모두에 둡니다.** 한쪽이라도 0이면 토픽이 안 보이는데, 증상이 `perception_node`의 "no frames processed yet" 하나뿐이라 원인 찾기가 어렵습니다.
 
