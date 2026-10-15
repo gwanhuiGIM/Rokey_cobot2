@@ -55,19 +55,6 @@ _주제별 바로가기입니다. 본문 배치 순서와 다를 수 있습니�
 
 ## 저장소 구성
 
-**핵심 코드 바로가기**
-
-| 파일 | 하는 일 | 설명 위치 |
-| --- | --- | --- |
-| ⭐ **[`pick_fsm/task_manager.py`](src/pick_fsm/pick_fsm/task_manager.py)** | 인식 → 계획 → 집기 → 놓기 사이클을 조율하는 FSM 노드 | [시스템 구조](#시스템-구조) |
-| **[`pick_fsm/states.py`](src/pick_fsm/pick_fsm/states.py)** | FSM 상태(`State`)와 허용 전이(`TRANSITIONS`) 정의 | [FSM 상태 흐름](#fsm-상태-흐름) |
-| **[`voice_processing/vla_command_node.py`](src/voice_processing/voice_processing/vla_command_node.py)** | 계층 경계: `/vla/pick_command` JSON을 `/pick/*` 서비스 호출로 변환 | [시스템 구조](#시스템-구조) |
-| **[`graspgenx_perception/grasp_bridge_node.py`](src/graspgenx_perception/graspgenx_perception/grasp_bridge_node.py)** | GraspGen 파지 후보를 받아 점수·도달 반경·접근축으로 걸러 선택 | [시스템 구조](#시스템-구조) |
-| **[`vla_system/agent/skill_tier.py`](src/vla_system/vla_system/agent/skill_tier.py)** | 자연어 지시를 규칙(Tier 1)과 LLM(Tier 2)으로 나눠 해석 | [무엇을 할 수 있나](#무엇을-할-수-있나) |
-
-<details>
-<summary>디렉터리 구조 · 저장소에 없는 것</summary>
-
 ```
 .
 ├── src/
@@ -91,8 +78,24 @@ _주제별 바로가기입니다. 본문 배치 순서와 다를 수 있습니�
 │   └── vla/                   판단 쪽 보조 스크립트 (env.sh 등)
 ├── requirements-vla.txt       판단 계층 파이썬 의존성 (393줄)
 └── .env.example               API 키 입력 양식
-★ = 위 "핵심 코드 바로가기" 파일이 있는 곳
+★ = 아래 "핵심 코드 바로가기" 파일이 있는 곳
 ```
+
+<details>
+<summary>핵심 코드 바로가기</summary>
+
+| 파일 | 하는 일 | 설명 위치 |
+| --- | --- | --- |
+| ⭐ **[`pick_fsm/task_manager.py`](src/pick_fsm/pick_fsm/task_manager.py)** | 인식 → 계획 → 집기 → 놓기 사이클을 조율하는 FSM 노드 | [시스템 구조](#시스템-구조) |
+| **[`pick_fsm/states.py`](src/pick_fsm/pick_fsm/states.py)** | FSM 상태(`State`)와 허용 전이(`TRANSITIONS`) 정의 | [FSM 상태 흐름](#fsm-상태-흐름) |
+| **[`voice_processing/vla_command_node.py`](src/voice_processing/voice_processing/vla_command_node.py)** | 계층 경계: `/vla/pick_command` JSON을 `/pick/*` 서비스 호출로 변환 | [시스템 구조](#시스템-구조) |
+| **[`graspgenx_perception/grasp_bridge_node.py`](src/graspgenx_perception/graspgenx_perception/grasp_bridge_node.py)** | GraspGen 파지 후보를 받아 점수·도달 반경·접근축으로 걸러 선택 | [시스템 구조](#시스템-구조) |
+| **[`vla_system/agent/skill_tier.py`](src/vla_system/vla_system/agent/skill_tier.py)** | 자연어 지시를 규칙(Tier 1)과 LLM(Tier 2)으로 나눠 해석 | [무엇을 할 수 있나](#무엇을-할-수-있나) |
+
+</details>
+
+<details>
+<summary>저장소에 없는 것</summary>
 
 ### 저장소에 없는 것
 
