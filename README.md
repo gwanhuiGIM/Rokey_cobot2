@@ -324,7 +324,7 @@ docker run -d --name od_kimkh \
 ### 빌드할 때 지킬 것
 
 - **`colcon build`를 직접 돌리지 말고 [`./scripts/build.sh`](scripts/build.sh)를 씁니다.** `vla_system`은 `.venv` 안의 torch·openai가 필요한데, apt의 `/usr/bin/colcon`은 venv를 켜도 `/usr/bin/python3`로 돌아 console_scripts 셰뱅에 그 경로가 박힙니다. 그러면 노드가 런타임에 `ModuleNotFoundError: torch`로 죽습니다. `build.sh`는 vla 쪽만 venv의 `python3 -m colcon`으로 빌드합니다. 확인: `head -1 install/vla_system/lib/vla_system/agent_node`가 `.venv`를 가리켜야 합니다.
-- **`.yaml`만 고쳐도 다시 빌드합니다.** `ament_python` 패키지의 share 경로는 `build/`를 보므로 `src` 수정이 자동 반영되지 않습니다(`.py`는 바로 반영되어 헷갈리기 쉽습니다).
+- **yaml을 고친 뒤 반영이 안 되면 다시 빌드합니다.** `--symlink-install`이면 설치된 yaml이 `build/`를 거쳐 `src`를 가리켜서, 이미 있는 yaml 수정은 노드 재시작만으로 반영됩니다(README 정리 때 별도 테스트 패키지로 확인, 이 저장소 패키지로는 미확인). 새 yaml 파일을 추가했거나, 처음에 `--symlink-install` 없이 빌드한 `build/`가 남아 있으면 복사본을 보므로 다시 빌드해야 합니다. 개발 당시에는 이 때문에 "yaml도 재빌드"를 원칙으로 두었고([`build.sh`](scripts/build.sh) 주석), 자주 바꾸는 `config/objects.yaml`은 패키지 밖 ws 루트에 두었습니다.
 - **`ROS_DOMAIN_ID=93`을 호스트와 컨테이너 모두에 둡니다.** 한쪽이라도 0이면 토픽이 안 보이는데, 증상이 `perception_node`의 "no frames processed yet" 하나뿐이라 원인 찾기가 어렵습니다.
 
 | 하지 말 것 | 대신 | 이유 |
