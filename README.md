@@ -211,6 +211,24 @@ flowchart TD
 
 ![FSM 제어 패널 (rqt)](docs/images/fsm_control_panel.png)
 
+### launch · 파라미터 분리
+
+실기에서 바꾸는 값은 yaml에, 실행할 때마다 고르는 값은 launch 인자에 두었습니다. 코드를 고치지 않고 값을 바꾸고, 같은 값이 여러 곳에 흩어지지 않게 하려는 구조입니다.
+
+| 파일 | 맡는 값 | 읽는 쪽 |
+| --- | --- | --- |
+| [`config/objects.yaml`](config/objects.yaml) (ws 루트) | 탐지 대상(`detect`), 기본 타겟(`pick_default`), 물체별 반경·높이(`dimensions`) | `yolo_seg_node`(컨테이너), `pick_fsm.launch.py`, `graspx.launch.py`, `vla_command.launch.py` |
+| [`src/pick_fsm/config/pick_fsm.yaml`](src/pick_fsm/config/pick_fsm.yaml) | `task_manager`의 승인 게이트, 대기 시간, MoveIt 그룹·frame, 파지·배치 관련 값 | `pick_fsm.launch.py`(`params_file:=`) |
+| [`src/vla_system/config/system.yaml`](src/vla_system/config/system.yaml) | 인식·판단·bridge 노드의 토픽, 카메라 주기, 모델·임계값 | `vla_system.launch.py`(`params_file:=`) |
+| [`src/cumotion/config/dynamic_avoid.yaml`](src/cumotion/config/dynamic_avoid.yaml) | 재계획 주기, lookahead, 목표 자세 | `dynamic_avoid.launch.py`(`params_file:=`) |
+| `.env.example` 3개 | API 키(OpenAI) | `agent_node`, `get_keyword` 등. 실제 `.env`는 저장소에 없습니다 |
+
+- **`objects.yaml` 한 곳에서 무엇을 보고 무엇을 집을지 정합니다.** 탐지 노드, 파지 bridge, 음성 명령 검사가 같은 목록을 읽습니다. 컨테이너가 ws를 호스트와 같은 절대경로로 마운트하므로, 호스트 노드와 컨테이너 노드가 같은 파일을 봅니다.
+- **launch 인자는 yaml 위에 얹힙니다.** `parameters=[params_file, {launch 인자}]` 순서라, `require_approval:=true`·`target:=apple`·`mode:=check`처럼 실행 때 고른 값이 yaml 기본값을 이깁니다. 두 곳에 같은 값이 있는 항목(예: `require_approval`)은 yaml 주석에 그 사실을 적었습니다.
+- **실측으로 확정하지 않은 값에는 `UNVERIFIED`를 붙였습니다**(`pick_fsm.yaml` 첫머리 규칙).
+- **`pick_fsm.launch.py`는 bringup·카메라·MoveIt을 일부러 include하지 않습니다.** 이미 띄운 노드가 두 번 뜨면 `robot_description`이 충돌하기 때문입니다. 기동 순서는 [실행](#실행)과 `docs/RUNBOOK.md`를 따릅니다.
+- **`vla_system.launch.py`는 `enable_*` 인자로 노드를 켜고 끕니다.** `enable_pick_bridge`는 기본 꺼짐이라, 판단 계층만 단독으로 띄워도 FSM 쪽에 명령이 가지 않습니다.
+
 ### 현재 경로 / 실험·구버전
 
 | 구분 | 무엇 | 지위 |
