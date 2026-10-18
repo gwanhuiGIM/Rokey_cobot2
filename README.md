@@ -200,9 +200,13 @@ flowchart TB
         PLAN -->|실패| NEXT_CANDIDATE --> PLAN
         PLAN --> WAIT_APPROVAL
     end
-    subgraph G3["파지"]
+    subgraph G3["파지 — 접근"]
         direction LR
-        STOW --> APPROACH --> OPEN_GRIPPER --> DESCEND --> CLOSE --> VERIFY
+        STOW --> APPROACH --> OPEN_GRIPPER --> DESCEND
+    end
+    subgraph G3B["파지 — 닫기 · 확인"]
+        direction LR
+        CLOSE --> VERIFY
         VERIFY -->|더 좁게 재시도| CLOSE
         VERIFY -->|놓침| RELEASE_RETRY
     end
@@ -220,8 +224,9 @@ flowchart TB
     end
     G1 -->|"PERCEIVE → SCENE_PREP"| G2
     G2 -->|"/pick/approve 또는 승인 꺼짐<br/>WAIT_APPROVAL → STOW"| G3
-    G3 -->|"VERIFY → LIFT"| G4
-    G3 -->|"RELEASE_RETRY → HOME"| G4
+    G3 -->|"DESCEND → CLOSE"| G3B
+    G3B -->|"VERIFY → LIFT"| G4
+    G3B -->|"RELEASE_RETRY → HOME"| G4
     G5 -->|"/pick/reset<br/>SAFE_STOP → HOME"| G4
     G4 -->|"HOME → IDLE"| G1
 ```
