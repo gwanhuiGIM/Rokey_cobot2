@@ -9,21 +9,28 @@
 
 > **핵심 설계**: 판단(LLM)과 실행·안전(FSM)을 서로 다른 노드·패키지로 나누고, 둘 사이는 JSON 채널로만 주고받습니다(명령 `/vla/pick_command`, 결과 `/vla/pick_result`, 상태 `/vla/pick_status`). 모션 취소, 그리퍼 개폐, 물체 보유 상태, 충돌 씬 관리는 코드상 FSM(`task_manager`) 쪽에만 있습니다. 그래서 LLM 응답이 늦거나 틀려도 정지·그리퍼 판단은 FSM 규칙을 따르도록 분리했습니다.
 
+<details>
+<summary>시스템 구성도</summary>
+
 ```mermaid
 flowchart TB
     subgraph JUDGE["판단 계층 (src/vla_system)"]
+        direction LR
         P["사람"] --> GUI["vla_gui"] --> AG["agent_node<br/>Tier 1 규칙 (LLM 없이)<br/>Tier 2 gpt-5-mini + 카메라 사진"]
         AG -->|"RobotAction"| BR["vla_pick_bridge_node"]
         GUI -->|"&quot;멈춰&quot; (LLM 거치지 않음)"| BR
     end
-    BR ==>|"/vla/pick_command (JSON) — 계층 경계"| CMD
+    JUDGE ==>|"/vla/pick_command (JSON) — 계층 경계<br/>vla_pick_bridge_node → vla_command_node"| EXEC
     subgraph EXEC["실행·안전 계층"]
+        direction LR
         CMD["vla_command_node<br/>(/pick/* 서비스, /get_keyword 응답)"] --> TM["task_manager (pick_fsm)"]
         TM -->|"grasp 요청"| GG["graspgenx_perception<br/>(YOLO-seg + GraspGen 컨테이너)"]
         TM --> MB["moveit_bridge"] --> MG["move_group (OMPL 기본)"] --> ROBOT["M0609 + RG2"]
         SAFE["robot_safety_node<br/>(별도 프로세스, /safety/*)"]
     end
 ```
+
+</details>
 
 ## 목차
 
@@ -182,21 +189,41 @@ _주제별 바로가기입니다. 본문 배치 순서와 다를 수 있습니�
 아래는 정상 경로와 주요 분기만 그린 것입니다.
 
 ```mermaid
-flowchart TD
-    IDLE -->|/pick/start| LISTENING
-    LISTENING -->|타겟 수신| PERCEIVE["PERCEIVE<br/>grasp 요청"]
-    PERCEIVE --> SCENE_PREP --> PLAN["PLAN<br/>pre-grasp · grasp · lift 3점 IK"]
-    PLAN -->|실패| NEXT_CANDIDATE --> PLAN
-    PLAN --> WAIT_APPROVAL -->|/pick/approve 또는 승인 꺼짐| STOW --> APPROACH --> OPEN_GRIPPER --> DESCEND --> CLOSE --> VERIFY
-    VERIFY -->|더 좁게 재시도| CLOSE
-    VERIFY -->|놓침| RELEASE_RETRY --> HOME
-    VERIFY --> LIFT
-    LIFT -->|목적지 있음| PLACE
-    LIFT -->|목적지 없음| WAIT_PLACE_TARGET --> PLACE
-    WAIT_PLACE_TARGET -->|release_now| RELEASE
-    PLACE -->|재시도 소진| PLACE_RETRY -->|/pick/retry_place| PLACE
-    PLACE --> RELEASE --> HOME --> IDLE
-    ABORT --> SAFE_STOP -->|/pick/reset| HOME
+flowchart TB
+    subgraph G1["대기 · 인식"]
+        direction LR
+        IDLE -->|/pick/start| LISTENING -->|타겟 수신| PERCEIVE["PERCEIVE<br/>grasp 요청"]
+    end
+    subgraph G2["계획"]
+        direction LR
+        SCENE_PREP --> PLAN["PLAN<br/>pre-grasp · grasp · lift 3점 IK"]
+        PLAN -->|실패| NEXT_CANDIDATE --> PLAN
+        PLAN --> WAIT_APPROVAL
+    end
+    subgraph G3["파지"]
+        direction LR
+        STOW --> APPROACH --> OPEN_GRIPPER --> DESCEND --> CLOSE --> VERIFY
+        VERIFY -->|더 좁게 재시도| CLOSE
+        VERIFY -->|놓침| RELEASE_RETRY
+    end
+    subgraph G4["운반 · 놓기 · 복귀"]
+        direction LR
+        LIFT -->|목적지 있음| PLACE
+        LIFT -->|목적지 없음| WAIT_PLACE_TARGET --> PLACE
+        WAIT_PLACE_TARGET -->|release_now| RELEASE
+        PLACE -->|재시도 소진| PLACE_RETRY -->|/pick/retry_place| PLACE
+        PLACE --> RELEASE --> HOME
+    end
+    subgraph G5["안전"]
+        direction LR
+        ABORT --> SAFE_STOP
+    end
+    G1 -->|"PERCEIVE → SCENE_PREP"| G2
+    G2 -->|"/pick/approve 또는 승인 꺼짐<br/>WAIT_APPROVAL → STOW"| G3
+    G3 -->|"VERIFY → LIFT"| G4
+    G3 -->|"RELEASE_RETRY → HOME"| G4
+    G5 -->|"/pick/reset<br/>SAFE_STOP → HOME"| G4
+    G4 -->|"HOME → IDLE"| G1
 ```
 
 - [`pick_fsm.launch.py`](src/pick_fsm/launch/pick_fsm.launch.py)의 `require_approval` 기본값은 `false`라 `WAIT_APPROVAL`은 곧바로 통과합니다. 켜려면 `require_approval:=true`.
