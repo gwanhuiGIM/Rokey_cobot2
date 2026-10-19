@@ -216,19 +216,18 @@ flowchart TB
         LIFT -->|목적지 없음| WAIT_PLACE_TARGET --> PLACE
         WAIT_PLACE_TARGET -->|release_now| RELEASE
         PLACE -->|재시도 소진| PLACE_RETRY -->|/pick/retry_place| PLACE
-        PLACE --> RELEASE --> HOME
+        PLACE --> RELEASE --> HOME["HOME<br/>→ IDLE로 복귀"]
     end
     subgraph G5["안전"]
         direction LR
-        ABORT --> SAFE_STOP
+        ABORT --> SAFE_STOP["SAFE_STOP<br/>/pick/reset → HOME"]
     end
     G1 -->|"PERCEIVE → SCENE_PREP"| G2
     G2 -->|"/pick/approve 또는 승인 꺼짐<br/>WAIT_APPROVAL → STOW"| G3
     G3 -->|"DESCEND → CLOSE"| G3B
     G3B -->|"VERIFY → LIFT"| G4
     G3B -->|"RELEASE_RETRY → HOME"| G4
-    G5 -->|"/pick/reset<br/>SAFE_STOP → HOME"| G4
-    G4 -->|"HOME → IDLE"| G1
+    G4 ~~~ G5
 ```
 
 - [`pick_fsm.launch.py`](src/pick_fsm/launch/pick_fsm.launch.py)의 `require_approval` 기본값은 `false`라 `WAIT_APPROVAL`은 곧바로 통과합니다. 켜려면 `require_approval:=true`.
