@@ -22,7 +22,7 @@ flowchart TB
         AG -->|"해석된 동작"| BR["집기 명령으로 변환"]
         GUI -->|"&quot;멈춰&quot; (LLM 거치지 않음)"| BR
     end
-    JUDGE ==>|"집기 명령 (JSON) · 결과 · 상태"| EXEC
+    JUDGE <==>|"집기 명령 ↓ (JSON)<br/>결과 · 진행 상태 ↑"| EXEC
     subgraph EXEC["실행 · 안전 계층"]
         direction LR
         CMD["명령을 FSM 서비스로 바꿈<br/>타겟 이름 응답"] -->|"시작 · 정지 · 타겟"| TM["집기 사이클 진행 (FSM)<br/>인식 → 계획 → 집기 → 놓기"]
@@ -35,10 +35,10 @@ flowchart TB
 
 | 칸 | 코드 | 주고받는 토픽·서비스 |
 |---|---|---|
-| 조작 화면 | [`vla_gui.py`](src/vla_system/vla_system/vla_gui.py) | 발행 `/vla/user_utterance`(지시 문장) `/vla/robot/pause`("멈춰") `/vla/estop`(정지 버튼) · 구독 `/vla/agent/reply` `/vla/pick_status` |
+| 조작 화면 | [`vla_gui.py`](src/vla_system/vla_system/vla_gui.py) | 발행 `/vla/user_utterance`(지시 문장) `/vla/robot/pause`(멈춤 버튼 · 음성 "멈춰") `/vla/estop`(비상정지 버튼 · ESC) · 구독 `/vla/agent/reply` `/vla/robot/state` `/vla/pick_status` |
 | 지시 해석 | [`nodes/agent_node.py`](src/vla_system/vla_system/nodes/agent_node.py), Tier 분기 [`agent/skill_tier.py`](src/vla_system/vla_system/agent/skill_tier.py) | 구독 `/vla/user_utterance` · 발행 `/vla/robot/action`(`RobotAction`) |
-| 집기 명령으로 변환 | [`nodes/vla_pick_bridge_node.py`](src/vla_system/vla_system/nodes/vla_pick_bridge_node.py) | 구독 `/vla/robot/action` `/vla/robot/pause` `/vla/estop` `/vla/pick_result` · 발행 `/vla/pick_command` |
-| 명령을 FSM 서비스로 바꿈 | [`vla_command_node.py`](src/voice_processing/voice_processing/vla_command_node.py) | 구독 `/vla/pick_command` · 호출 `/pick/*` · 응답 `/get_keyword` · 발행 `/vla/pick_result` `/vla/pick_status` |
+| 집기 명령으로 변환 | [`nodes/vla_pick_bridge_node.py`](src/vla_system/vla_system/nodes/vla_pick_bridge_node.py) | 구독 `/vla/robot/action` `/vla/robot/pause` `/vla/estop` `/vla/pick_result` · 발행 `/vla/pick_command` `/vla/robot/state` |
+| 명령을 FSM 서비스로 바꿈 | [`vla_command_node.py`](src/voice_processing/voice_processing/vla_command_node.py) | 구독 `/vla/pick_command` · 호출 `/pick/*`(멈춤 → `/pick/pause`, 비상정지 → `/pick/abort` 등) · 응답 `/get_keyword` · 발행 `/vla/pick_result` `/vla/pick_status` |
 | 집기 사이클 진행 | [`task_manager.py`](src/pick_fsm/pick_fsm/task_manager.py), 상태·전이표 [`states.py`](src/pick_fsm/pick_fsm/states.py), MoveIt 호출 [`moveit_bridge.py`](src/pick_fsm/pick_fsm/moveit_bridge.py), 그리퍼 [`rg2.py`](src/pick_fsm/pick_fsm/rg2.py) | 제공 `/pick/*` · 호출 `/get_keyword` `/grasp/compute` `/compute_ik` `/move_action` `/onrobot/sendCommand` · 발행 `/pick/state` |
 | 파지 자세 계산 | [`grasp_bridge_node.py`](src/graspgenx_perception/graspgenx_perception/grasp_bridge_node.py), [`yolo_seg_node.py`](src/graspgenx_perception/graspgenx_perception/yolo_seg_node.py) | 제공 `/grasp/compute` · 발행 `/grasp/best` `/grasp/candidates` |
 | MoveIt 경로 계획 | `move_group` (MoveIt) | `/compute_ik` · `/move_action` |
@@ -201,7 +201,7 @@ sequenceDiagram
     participant TM as 집기 FSM
     participant GG as 파지 자세 계산
     participant MG as MoveIt
-    U->>GUI: 빨간 컵 집어 (음성 · 텍스트)
+    U->>GUI: 빨간 컵을 바구니에 (대상 · 목적지)
     GUI->>AG: 지시 문장
     AG->>BR: 해석된 동작 (pick, 대상)
     BR->>CMD: 집기 명령 JSON
@@ -214,6 +214,7 @@ sequenceDiagram
     TM->>MG: pre-grasp · grasp · lift IK (PLAN)
     TM->>MG: 접근 · 하강 실행 (APPROACH · DESCEND)
     Note over TM: 그리퍼 닫기 → 쥐었는지 확인 (CLOSE · VERIFY)
+    Note over TM: 목적지를 말하지 않았으면 들어 올린 채 WAIT_PLACE_TARGET에서<br/>놓을 곳(set_place)이나 release_now를 기다림
     TM->>MG: 들기 · 놓기 · 복귀 실행 (LIFT · PLACE · HOME)
     TM-->>CMD: 상태 변화 (RELEASE를 지나 HOME)
     CMD-->>BR: 결과 succeeded
@@ -267,7 +268,7 @@ flowchart TB
         LIFT -->|목적지 없음| WAIT_PLACE_TARGET --> PLACE
         WAIT_PLACE_TARGET -->|release_now| RELEASE
         PLACE -->|재시도 소진| PLACE_RETRY -->|/pick/retry_place| PLACE
-        PLACE --> RELEASE --> HOME["HOME<br/>→ IDLE로 복귀"]
+        PLACE --> RELEASE --> HOME["HOME<br/>→ IDLE로 복귀<br/>(RELEASE_RETRY에서 왔으면 → PERCEIVE)"]
     end
     subgraph G5["안전"]
         direction LR
