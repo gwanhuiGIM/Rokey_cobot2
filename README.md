@@ -12,23 +12,37 @@
 <details>
 <summary>시스템 구성도</summary>
 
+칸은 하는 일, 화살표는 주고받는 내용입니다. 노드·토픽 이름과 코드 위치는 그림 아래 표에 있습니다. 굵은 화살표는 판단 계층과 실행 계층의 경계입니다.
+
 ```mermaid
 flowchart TB
     subgraph JUDGE["판단 계층 (src/vla_system)"]
         direction LR
-        P["사람"] --> GUI["vla_gui"] --> AG["agent_node<br/>Tier 1 규칙 (LLM 없이)<br/>Tier 2 gpt-5-mini + 카메라 사진"]
-        AG -->|"RobotAction"| BR["vla_pick_bridge_node"]
+        P["사람"] -->|"음성 · 텍스트 지시"| GUI["조작 화면"] -->|"지시 문장"| AG["지시 해석<br/>규칙(Tier 1), 안 되면<br/>LLM + 카메라 사진(Tier 2)"]
+        AG -->|"해석된 동작"| BR["집기 명령으로 변환"]
         GUI -->|"&quot;멈춰&quot; (LLM 거치지 않음)"| BR
     end
-    JUDGE ==>|"/vla/pick_command (JSON) — 계층 경계<br/>vla_pick_bridge_node → vla_command_node"| EXEC
-    subgraph EXEC["실행·안전 계층"]
+    JUDGE ==>|"집기 명령 (JSON) · 결과 · 상태"| EXEC
+    subgraph EXEC["실행 · 안전 계층"]
         direction LR
-        CMD["vla_command_node<br/>(/pick/* 서비스, /get_keyword 응답)"] --> TM["task_manager (pick_fsm)"]
-        TM -->|"grasp 요청"| GG["graspgenx_perception<br/>(YOLO-seg + GraspGen 컨테이너)"]
-        TM --> MB["moveit_bridge"] --> MG["move_group (OMPL 기본)"] --> ROBOT["M0609 + RG2"]
-        SAFE["robot_safety_node<br/>(별도 프로세스, /safety/*)"]
+        CMD["명령을 FSM 서비스로 바꿈<br/>타겟 이름 응답"] -->|"시작 · 정지 · 타겟"| TM["집기 사이클 진행 (FSM)<br/>인식 → 계획 → 집기 → 놓기"]
+        TM -->|"파지 자세 요청"| GG["파지 자세 계산<br/>(YOLO-seg + GraspGen)"]
+        TM -->|"경로 계획 · 실행"| MG["MoveIt 경로 계획<br/>(move_group)"] -->|"관절 궤적"| ROBOT["M0609 + RG2"]
+        TM -->|"그리퍼 개폐"| ROBOT
+        SAFE["로봇 정지 · backdrive<br/>(별도 프로세스)"] -->|"정지 · 모드 전환"| ROBOT
     end
 ```
+
+| 칸 | 코드 | 주고받는 토픽·서비스 |
+|---|---|---|
+| 조작 화면 | [`vla_gui.py`](src/vla_system/vla_system/vla_gui.py) | 발행 `/vla/user_utterance`(지시 문장) `/vla/robot/pause`("멈춰") `/vla/estop`(정지 버튼) · 구독 `/vla/agent/reply` `/vla/pick_status` |
+| 지시 해석 | [`nodes/agent_node.py`](src/vla_system/vla_system/nodes/agent_node.py), Tier 분기 [`agent/skill_tier.py`](src/vla_system/vla_system/agent/skill_tier.py) | 구독 `/vla/user_utterance` · 발행 `/vla/robot/action`(`RobotAction`) |
+| 집기 명령으로 변환 | [`nodes/vla_pick_bridge_node.py`](src/vla_system/vla_system/nodes/vla_pick_bridge_node.py) | 구독 `/vla/robot/action` `/vla/robot/pause` `/vla/estop` `/vla/pick_result` · 발행 `/vla/pick_command` |
+| 명령을 FSM 서비스로 바꿈 | [`vla_command_node.py`](src/voice_processing/voice_processing/vla_command_node.py) | 구독 `/vla/pick_command` · 호출 `/pick/*` · 응답 `/get_keyword` · 발행 `/vla/pick_result` `/vla/pick_status` |
+| 집기 사이클 진행 | [`task_manager.py`](src/pick_fsm/pick_fsm/task_manager.py), 상태·전이표 [`states.py`](src/pick_fsm/pick_fsm/states.py), MoveIt 호출 [`moveit_bridge.py`](src/pick_fsm/pick_fsm/moveit_bridge.py), 그리퍼 [`rg2.py`](src/pick_fsm/pick_fsm/rg2.py) | 제공 `/pick/*` · 호출 `/get_keyword` `/grasp/compute` `/compute_ik` `/move_action` `/onrobot/sendCommand` · 발행 `/pick/state` |
+| 파지 자세 계산 | [`grasp_bridge_node.py`](src/graspgenx_perception/graspgenx_perception/grasp_bridge_node.py), [`yolo_seg_node.py`](src/graspgenx_perception/graspgenx_perception/yolo_seg_node.py) | 제공 `/grasp/compute` · 발행 `/grasp/best` `/grasp/candidates` |
+| MoveIt 경로 계획 | `move_group` (MoveIt) | `/compute_ik` · `/move_action` |
+| 로봇 정지 · backdrive | [`robot_safety_node.py`](src/pick_fsm/pick_fsm/robot_safety_node.py) | 제공 `/safety/stop` `/safety/enter_backdrive` `/safety/exit_backdrive` · 발행 `/pick/robot_state_code` `/pick/robot_state_text` |
 
 </details>
 
@@ -168,6 +182,43 @@ _주제별 바로가기입니다. 본문 배치 순서와 다를 수 있습니�
 **경계** — `voice_processing/vla_command_node`가 JSON을 `/pick/*` 서비스 호출로 바꿉니다. 타겟 지시는 FSM이 `LISTENING` 상태에서 `/get_keyword`를 부를 때 이 노드가 응답하는 방식(pull)으로 전달됩니다.
 
 **실행·안전** — `pick_fsm/task_manager`가 25개 상태로 인식 → 계획 → 실행 사이클을 조율하고, `moveit_bridge`가 move_group에 계획·실행을 맡깁니다. `robot_safety_node`는 `task_manager`와 별도 프로세스로 Doosan 안전 서비스(`/safety/stop` = MoveStop, backdrive 진입/해제)를 감쌉니다. FSM이 멈춰도 이 노드의 서비스는 따로 호출할 수 있게 나눴지만, 서비스는 결과를 기다리지 않고 바로 응답(fire-and-forget)하므로 실제 결과는 `/pick/robot_state_text`로 확인합니다.
+
+</details>
+
+<details>
+<summary>집기 명령 한 번의 흐름 (sequence)</summary>
+
+승인 단계가 꺼진 기본 설정에서 정상적으로 끝나는 경우만 그렸습니다. 괄호 안은 FSM 상태입니다.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 사람
+    participant GUI as 조작 화면
+    participant AG as 지시 해석
+    participant BR as 집기 명령 변환
+    participant CMD as 명령 → FSM
+    participant TM as 집기 FSM
+    participant GG as 파지 자세 계산
+    participant MG as MoveIt
+    U->>GUI: 빨간 컵 집어 (음성 · 텍스트)
+    GUI->>AG: 지시 문장
+    AG->>BR: 해석된 동작 (pick, 대상)
+    BR->>CMD: 집기 명령 JSON
+    Note over CMD,TM: 사람이 /pick/start를 부르거나, auto_start:=true면 이 노드가 부름
+    CMD->>TM: 시작 요청
+    TM->>CMD: 타겟 이름 요청 (LISTENING)
+    CMD-->>TM: 빨간 컵
+    TM->>GG: 파지 자세 요청 (PERCEIVE)
+    GG-->>TM: 최적 파지 자세
+    TM->>MG: pre-grasp · grasp · lift IK (PLAN)
+    TM->>MG: 접근 · 하강 실행 (APPROACH · DESCEND)
+    Note over TM: 그리퍼 닫기 → 쥐었는지 확인 (CLOSE · VERIFY)
+    TM->>MG: 들기 · 놓기 · 복귀 실행 (LIFT · PLACE · HOME)
+    TM-->>CMD: 상태 변화 (RELEASE를 지나 HOME)
+    CMD-->>BR: 결과 succeeded
+    BR-->>GUI: 로봇 상태 갱신
+```
 
 </details>
 
