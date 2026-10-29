@@ -9,6 +9,23 @@
 
 > **핵심 설계**: 판단(LLM)과 실행·안전(FSM)을 서로 다른 노드·패키지로 나누고, 둘 사이는 JSON 채널로만 주고받습니다(명령 `/vla/pick_command`, 결과 `/vla/pick_result`, 상태 `/vla/pick_status`). 모션 취소, 그리퍼 개폐, 물체 보유 상태, 충돌 씬 관리는 코드상 FSM(`task_manager`) 쪽에만 있습니다. 그래서 LLM 응답이 늦거나 틀려도 정지·그리퍼 판단은 FSM 규칙을 따르도록 분리했습니다.
 
+## 본인 담당
+
+5인 팀을 판단·인식을 맡는 VLM 파트 3명과 로봇 구동을 맡는 M0609 파트 2명으로 나눴고, 저는 M0609 파트였습니다. 판단 계층(GUI·지시 해석·미션)과 cuMotion 재계획 코드 본체는 팀 작업이고, 아래는 그중 제가 맡은 몫입니다.
+
+- **VLA 작업 지시 전달 및 디버깅·모니터링을 위한 FSM 상태 구분과 감지 실패 예외 처리 연동(공동작업)** — FSM은 집기 작업을 단계별 상태로 나눠 순서를 제어하는 구조입니다. 판단 계층의 집기 명령이 FSM 서비스 호출로 바뀌어 들어오고, FSM의 진행 상태와 결과가 다시 판단 계층으로 올라가는 경로입니다.
+  코드: [`states.py`](src/pick_fsm/pick_fsm/states.py) · [`task_manager.py`](src/pick_fsm/pick_fsm/task_manager.py) · [`vla_command_node.py`](src/voice_processing/voice_processing/vla_command_node.py)
+- **파지 모델(GraspGenX)과 실물 그리퍼(RG2) 차이 실측·보정** — 현장 RG2는 로봇 팔과의 사이에 브라켓(22mm)이 끼어 있고, 다물었을 때 손끝이 모델보다 38mm 길며, 벌릴수록 손끝까지 길이가 짧아집니다. GraspGenX 모델은 고치지 않고 실측값과 벌림 폭별 손끝 길이 보정표를 그리퍼 코드에 넣었습니다. 손끝 위치를 추정하는 값이고 로봇 목표 자세를 고치는 보정은 아니며, 파지 성공률에 준 효과는 확인하지 않았습니다.
+  코드: [`rg2.py`](src/pick_fsm/pick_fsm/rg2.py)
+- **GPU 메모리 대응** — 노트북 GPU(8GB)에서 메모리가 모자라지 않도록 GraspGenX 파지 후보 수(`num_grasps`)를 기본 200개에서 64개로 줄였습니다. 물체 인식(YOLO) 노드가 중복 실행되던 문제는 단일 실행 잠금과 실행 스크립트로 막았습니다(당시 기록: 같은 토픽을 내보내는 노드 10개→1개).
+  코드: [`grasp_bridge_node.py`](src/graspgenx_perception/graspgenx_perception/grasp_bridge_node.py) · [`yolo_seg_node.py`](src/graspgenx_perception/graspgenx_perception/yolo_seg_node.py) · [`graspx_container.sh`](scripts/fsm/graspx_container.sh)
+- **구동 중 정지 후 재계획 연결** — FSM이 move_group에 이동을 맡길 때 `replan` 옵션(`replan_attempts` 3회)을 켜, 이동 중 사람이 작업영역에 손을 넣어 장면이 바뀌면 멈추고 새 경로로 다시 계획하게 했습니다. 그래도 실패하면 FSM이 바깥에서 재시도하거나 다음 파지 후보로 넘어갑니다. OMPL 경로에서 이 동작을 실기로 확인했습니다(cuMotion 동적 회피와는 별개입니다).
+  코드: [`pick_fsm.yaml`](src/pick_fsm/config/pick_fsm.yaml) · [`task_manager.py`](src/pick_fsm/pick_fsm/task_manager.py) · [`moveit_bridge.py`](src/pick_fsm/pick_fsm/moveit_bridge.py)
+- **장애물 지도 서비스 점검 게이트(공동작업, 실험 코드)** — cuMotion은 장애물 지도(nvblox) 서비스가 죽어 있어도 장애물이 없는 것으로 보고 계획에 성공할 수 있습니다. 그래서 팀의 cuMotion 모션 코드 위에, 이 서비스가 없으면 이동을 막는 게이트를 제안·구현했습니다. 궤적 실행 쪽 안전 계층은 팀 코드가, 충돌 회피 계산은 NVIDIA 스택이 맡습니다. 최종 작업 흐름(pick FSM)에는 연결하지 않은 실험 코드이고, 실제 장애물을 넣은 회피 실기는 하지 않았습니다.
+  코드: [`arm.py`](src/cumotion/cumotion/arm.py)
+- **설정값 정본은 yaml, 실행 선택은 launch 인자로 분리** — 실기에서 바꾸는 FSM 값은 `pick_fsm.yaml`에, 탐지 대상·기본 타겟·물체 치수는 ws 루트 `objects.yaml` 한 곳에 두고, 실행마다 고르는 값은 launch 인자로 나눴습니다. 자세한 구조는 [launch · 파라미터 분리](#launch--파라미터-분리)에 있습니다.
+  코드: [`pick_fsm.yaml`](src/pick_fsm/config/pick_fsm.yaml) · [`objects.yaml`](config/objects.yaml) · [`pick_fsm.launch.py`](src/pick_fsm/launch/pick_fsm.launch.py)
+
 <details>
 <summary>시스템 구성도</summary>
 
@@ -50,7 +67,7 @@ flowchart TB
 
 _주제별 바로가기입니다. 본문 배치 순서와 다를 수 있습니다._
 
-- **개요·구조**: [환경 · 장비](#환경--장비) · [저장소 구성](#저장소-구성) · [무엇을 할 수 있나](#무엇을-할-수-있나) · [시스템 구조](#시스템-구조)
+- **개요·구조**: [본인 담당](#본인-담당) · [환경 · 장비](#환경--장비) · [저장소 구성](#저장소-구성) · [무엇을 할 수 있나](#무엇을-할-수-있나) · [시스템 구조](#시스템-구조)
 - **돌려 보기**: [설치](#설치) · [실행](#실행)
 - **검증·한계·참고**: [한계 · 미완성](#한계--미완성) · [더 읽을 문서](#더-읽을-문서) · [검증](#검증) · [License](#license)
 
