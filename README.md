@@ -26,7 +26,7 @@
 - **독립 안전 노드 통합(공동작업)** — FSM(`task_manager`)과 별도 프로세스로 동작하는 안전 노드를 pick 파이프라인에 통합해, FSM 상태와 분리된 경로에서 로봇 정지(MoveStop) 및 backdrive 서비스를 제공하도록 구성했습니다. 동적 회피나 재계획이 아닌 정지·모드 전환 서비스를 독립 창구로 제공하는 역할입니다.
   코드: [`robot_safety_node.py`](src/pick_fsm/pick_fsm/robot_safety_node.py) · [`pick_fsm.launch.py`](src/pick_fsm/launch/pick_fsm.launch.py)
 - **장애물 지도 서비스 점검 게이트(공동작업, 실험 코드)** — cuMotion은 장애물 지도(nvblox) 서비스가 죽어 있어도 장애물이 없는 것으로 보고 계획에 성공할 수 있습니다. 그래서 팀의 cuMotion 모션 코드 위에, 이 서비스가 없으면 이동을 막는 게이트를 제안·구현했습니다. 궤적 실행 쪽 안전 계층은 팀 코드가, 충돌 회피 계산은 NVIDIA 스택이 맡습니다. 최종 작업 흐름(pick FSM)에는 연결하지 않은 실험 코드이고, 실제 장애물을 넣은 회피 실기는 하지 않았습니다.
-  코드: [`arm.py`](src/cumotion/cumotion/arm.py)
+  코드: [`arm.py`](src/cumotion/cumotion/arm.py) · [`dynamic_avoid.py`](src/cumotion/cumotion/dynamic_avoid.py)
 - **설정값 정본은 yaml, 실행 선택은 launch 인자로 분리** — 실기에서 바꾸는 FSM 값은 `pick_fsm.yaml`에, 탐지 대상·기본 타겟·물체 치수는 ws 루트 `objects.yaml` 한 곳에 두고, 실행마다 고르는 값은 launch 인자로 나눴습니다. 자세한 구조는 [launch · 파라미터 분리](#launch--파라미터-분리)에 있습니다.
   코드: [`pick_fsm.yaml`](src/pick_fsm/config/pick_fsm.yaml) · [`objects.yaml`](config/objects.yaml) · [`pick_fsm.launch.py`](src/pick_fsm/launch/pick_fsm.launch.py)
 
