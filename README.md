@@ -184,6 +184,8 @@ _주제별 바로가기입니다. 본문 배치 순서와 다를 수 있습니�
 
 ![ROS 2 노드 아키텍처](docs/images/system_architecture.png)
 
+> 그림의 "RealSense D455"는 실제 사용 카메라 **D435i**(eye-to-hand 1대)와 다릅니다. 그림의 `get_keyword`·`approve_listener_node` 노드도 현재 지시 경로(`vla_gui` → `agent_node` → `vla_pick_bridge_node` → `vla_command_node`)가 아닙니다 — 현재는 `vla_command_node`가 `/get_keyword` 서비스에 응답합니다([현재 경로 / 실험·구버전](#현재-경로--실험구버전)).
+
 | 파지 후보 선택 | 실물 RG2 파지 |
 | --- | --- |
 | ![포인트클라우드 위 GraspGen 파지 후보](docs/images/grasp_candidates.jpg) | ![M0609 + RG2가 오렌지를 집는 장면](docs/images/rg2_grasp.jpg) |
